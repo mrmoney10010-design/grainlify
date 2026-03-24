@@ -47,21 +47,21 @@ fn test_granular_pause_lock() {
 
     let bounty_id_1: u64 = 1;
     let deadline = env.ledger().timestamp() + 1000;
-    escrow_client.lock_funds(&depositor, &bounty_id_1, &100, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &bounty_id_1, &100, &deadline);
 
     escrow_client.set_paused(&Some(true), &None, &None, &None);
     let flags = escrow_client.get_pause_flags();
     assert!(flags.lock_paused);
 
     let bounty_id_2: u64 = 2;
-    let res = escrow_client.try_lock_funds(&depositor, &bounty_id_2, &100, &deadline, &None);
+    let res = escrow_client.try_lock_funds(&depositor, &bounty_id_2, &100, &deadline);
     assert!(res.is_err());
 
     escrow_client.set_paused(&Some(false), &None, &None, &None);
     let flags = escrow_client.get_pause_flags();
     assert!(!flags.lock_paused);
 
-    escrow_client.lock_funds(&depositor, &bounty_id_2, &100, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &bounty_id_2, &100, &deadline);
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn test_granular_pause_release() {
 
     let bounty_id: u64 = 1;
     let deadline = env.ledger().timestamp() + 1000;
-    escrow_client.lock_funds(&depositor, &bounty_id, &100, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &bounty_id, &100, &deadline);
 
     escrow_client.set_paused(&None, &Some(true), &None, &None);
     let flags = escrow_client.get_pause_flags();
@@ -116,7 +116,7 @@ fn test_granular_pause_refund() {
     let bounty_id: u64 = 1;
     let deadline = env.ledger().timestamp() + 1000;
 
-    escrow_client.lock_funds(&depositor, &bounty_id, &100, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &bounty_id, &100, &deadline);
 
     env.ledger().set_timestamp(deadline + 1);
 
@@ -232,14 +232,12 @@ fn test_batch_lock_funds_while_paused_fails() {
             amount: 100,
             depositor: depositor.clone(),
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 2,
             amount: 100,
             depositor: depositor.clone(),
             deadline,
-            non_transferable_rewards: false,
         }
     ];
 
@@ -264,7 +262,7 @@ fn test_batch_release_funds_while_paused_fails() {
     token_admin_client.mint(&depositor, &1000);
 
     let deadline = env.ledger().timestamp() + 1000;
-    escrow_client.lock_funds(&depositor, &1u64, &100, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &1u64, &100, &deadline);
 
     // Pause release
     escrow_client.set_paused(&None, &Some(true), &None, &None);
@@ -300,14 +298,14 @@ fn test_operations_resume_after_unpause() {
     escrow_client.set_paused(&Some(true), &Some(true), &Some(true), &None);
 
     let deadline = env.ledger().timestamp() + 1000;
-    let res_lock = escrow_client.try_lock_funds(&depositor, &1u64, &100, &deadline, &None);
+    let res_lock = escrow_client.try_lock_funds(&depositor, &1u64, &100, &deadline);
     assert!(res_lock.is_err());
 
     // Unpause lock
     escrow_client.set_paused(&Some(false), &None, &None, &None);
 
     // Now it works
-    escrow_client.lock_funds(&depositor, &1u64, &100, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &1u64, &100, &deadline);
 
     // Release still paused though
     let contributor = Address::generate(&env);
@@ -339,7 +337,7 @@ fn test_lock_funds_while_paused_no_state_change() {
     escrow_client.set_paused(&Some(true), &None, &None, &None);
 
     let deadline = env.ledger().timestamp() + 1000;
-    let _ = escrow_client.try_lock_funds(&depositor, &1u64, &100, &deadline, &None);
+    let _ = escrow_client.try_lock_funds(&depositor, &1u64, &100, &deadline);
 
     // Verify token balance didn't change and escrow wasn't created
     assert_eq!(token_client.balance(&depositor), 1000);
@@ -387,7 +385,7 @@ fn test_emergency_withdraw_succeeds() {
     token_admin_client.mint(&depositor, &1000);
 
     let deadline = env.ledger().timestamp() + 1000;
-    escrow_client.lock_funds(&depositor, &1u64, &500i128, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &1u64, &500i128, &deadline);
 
     assert_eq!(token_client.balance(&escrow_client.address), 500);
 
@@ -432,7 +430,7 @@ fn setup_rbac_env<'a>(
     let depositor = Address::generate(env);
     token_admin_client.mint(&depositor, &1000);
     let deadline = env.ledger().timestamp() + 1000;
-    escrow_client.lock_funds(&depositor, &1u64, &500i128, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &1u64, &500i128, &deadline);
 
     (admin, operator, token_client, escrow_client)
 }
@@ -546,7 +544,7 @@ fn test_rbac_pause_state_preserved_after_emergency_withdraw() {
 
     let depositor = Address::generate(&env);
     let deadline = env.ledger().timestamp() + 2000;
-    let res = escrow_client.try_lock_funds(&depositor, &99u64, &100i128, &deadline, &None);
+    let res = escrow_client.try_lock_funds(&depositor, &99u64, &100i128, &deadline);
     assert!(res.is_err(), "lock should still be paused after withdraw");
 }
 
@@ -601,9 +599,9 @@ fn test_rbac_emergency_withdraw_drains_all_bounties() {
 
     let deadline = env.ledger().timestamp() + 1000;
 
-    escrow_client.lock_funds(&depositor, &1u64, &500i128, &deadline, &None);
-    escrow_client.lock_funds(&depositor, &2u64, &700i128, &deadline, &None);
-    escrow_client.lock_funds(&depositor, &3u64, &300i128, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &1u64, &500i128, &deadline);
+    escrow_client.lock_funds(&depositor, &2u64, &700i128, &deadline);
+    escrow_client.lock_funds(&depositor, &3u64, &300i128, &deadline);
 
     assert_eq!(token_client.balance(&escrow_client.address), 1500);
 
@@ -636,6 +634,6 @@ fn test_rbac_after_emergency_withdraw_can_unpause_and_reuse() {
     token_admin_client.mint(&new_depositor, &500);
 
     let deadline = env.ledger().timestamp() + 2000;
-    escrow_client.lock_funds(&new_depositor, &99u64, &200i128, &deadline, &None);
+    escrow_client.lock_funds(&new_depositor, &99u64, &200i128, &deadline);
     assert_eq!(token_client.balance(&escrow_client.address), 200);
 }

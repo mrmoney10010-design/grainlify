@@ -57,9 +57,9 @@ fn test_non_whitelisted_address_is_rate_limited_by_cooldown() {
     client.update_anti_abuse_config(&3600, &100, &100);
 
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &1, &100, &deadline, &None);
+    client.lock_funds(&depositor, &1, &100, &deadline);
 
-    let second = client.try_lock_funds(&depositor, &2, &100, &deadline, &None);
+    let second = client.try_lock_funds(&depositor, &2, &100, &deadline);
     assert!(second.is_err());
 }
 
@@ -72,8 +72,8 @@ fn test_whitelisted_address_bypasses_cooldown_check() {
     client.set_whitelist_entry(&depositor, &true);
 
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &11, &100, &deadline, &None);
-    client.lock_funds(&depositor, &12, &100, &deadline, &None);
+    client.lock_funds(&depositor, &11, &100, &deadline);
+    client.lock_funds(&depositor, &12, &100, &deadline);
 
     assert_eq!(token_client.balance(&client.address), 200);
 }
@@ -88,8 +88,8 @@ fn test_removed_from_whitelist_reenables_rate_limit_checks() {
     client.set_whitelist_entry(&depositor, &false);
 
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &21, &100, &deadline, &None);
+    client.lock_funds(&depositor, &21, &100, &deadline);
 
-    let second = client.try_lock_funds(&depositor, &22, &100, &deadline, &None);
+    let second = client.try_lock_funds(&depositor, &22, &100, &deadline);
     assert!(second.is_err());
 }

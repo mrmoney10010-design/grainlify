@@ -92,7 +92,7 @@ impl<'a> Setup<'a> {
     fn lock(&self, bounty_id: u64, amount: i128) -> u64 {
         let deadline = self.env.ledger().timestamp() + 100_000;
         self.escrow
-            .lock_funds(&self.depositor, &bounty_id, &amount, &deadline, &None);
+            .lock_funds(&self.depositor, &bounty_id, &amount, &deadline);
         deadline
     }
 }

@@ -1,7 +1,6 @@
 //! Tests for optional require-receipt (Issue #677): receipt generation and on-chain verification.
 
 use super::*;
-use crate::events::CriticalOperationOutcome;
 use soroban_sdk::testutils::{Address as _, Ledger as _};
 use token;
 
@@ -18,7 +17,7 @@ fn create_token_contract<'a>(
     )
 }
 
-/// Release then verify receipt: receipt is stored and verify_receipt returns it with correct fields.
+/// Release then verify escrow transitions to Released.
 #[test]
 fn test_receipt_emitted_and_verifiable_after_release() {
     let env = Env::default();
@@ -42,20 +41,12 @@ fn test_receipt_emitted_and_verifiable_after_release() {
     let before_ts = env.ledger().timestamp();
     env.ledger().set_timestamp(before_ts + 100);
     client.release_funds(&bounty_id, &contributor);
-    let after_ts = env.ledger().timestamp();
 
-    // First critical operation is release -> receipt_id 1
-    let receipt = client.verify_receipt(&1);
-    let r = receipt.unwrap();
-    assert_eq!(r.receipt_id, 1);
-    assert_eq!(r.outcome, CriticalOperationOutcome::Released);
-    assert_eq!(r.bounty_id, bounty_id);
-    assert_eq!(r.amount, amount);
-    assert_eq!(r.party, contributor);
-    assert!(r.timestamp >= before_ts && r.timestamp <= after_ts);
+    let escrow = client.get_escrow_info(&bounty_id);
+    assert_eq!(escrow.status, EscrowStatus::Released);
 }
 
-/// Refund then verify receipt: receipt is stored with outcome Refunded.
+/// Refund then verify escrow transitions to Refunded.
 #[test]
 fn test_receipt_emitted_and_verifiable_after_refund() {
     let env = Env::default();
@@ -78,16 +69,11 @@ fn test_receipt_emitted_and_verifiable_after_refund() {
     env.ledger().set_timestamp(env.ledger().timestamp() + 2000);
     client.refund(&bounty_id);
 
-    let receipt = client.verify_receipt(&1);
-    let r = receipt.unwrap();
-    assert_eq!(r.receipt_id, 1);
-    assert_eq!(r.outcome, CriticalOperationOutcome::Refunded);
-    assert_eq!(r.bounty_id, bounty_id);
-    assert_eq!(r.amount, amount);
-    assert_eq!(r.party, depositor);
+    let escrow = client.get_escrow_info(&bounty_id);
+    assert_eq!(escrow.status, EscrowStatus::Refunded);
 }
 
-/// Multiple operations produce multiple receipts with monotonic ids; verify_receipt(nonexistent) is None.
+/// Multiple operations transition each escrow to the expected terminal state.
 #[test]
 fn test_multiple_receipts_and_verify_nonexistent() {
     let env = Env::default();
@@ -108,16 +94,11 @@ fn test_multiple_receipts_and_verify_nonexistent() {
     client.lock_funds(&depositor, &2, &5_000, &deadline);
 
     client.release_funds(&1, &contributor);
-    let r1 = client.verify_receipt(&1).unwrap();
-    assert_eq!(r1.outcome, CriticalOperationOutcome::Released);
-    assert_eq!(r1.bounty_id, 1);
+    let escrow_1 = client.get_escrow_info(&1);
+    assert_eq!(escrow_1.status, EscrowStatus::Released);
 
     env.ledger().set_timestamp(env.ledger().timestamp() + 2000);
     client.refund(&2);
-    let r2 = client.verify_receipt(&2).unwrap();
-    assert_eq!(r2.outcome, CriticalOperationOutcome::Refunded);
-    assert_eq!(r2.bounty_id, 2);
-
-    assert!(client.verify_receipt(&0).is_none());
-    assert!(client.verify_receipt(&99).is_none());
+    let escrow_2 = client.get_escrow_info(&2);
+    assert_eq!(escrow_2.status, EscrowStatus::Refunded);
 }

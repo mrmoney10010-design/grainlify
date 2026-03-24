@@ -81,7 +81,7 @@ fn lock_bounty(
     amount: i128,
 ) -> u64 {
     let deadline = env.ledger().timestamp() + 10_000;
-    client.lock_funds(depositor, &bounty_id, &amount, &deadline, &None);
+    client.lock_funds(depositor, &bounty_id, &amount, &deadline);
     deadline
 }
 
@@ -200,7 +200,7 @@ fn test_lock_funds_blocked_when_lock_paused() {
 
     client.set_paused(&Some(true), &None, &None, &None);
     let deadline = env.ledger().timestamp() + 1_000;
-    let result = client.try_lock_funds(&depositor, &1, &100, &deadline, &None);
+    let result = client.try_lock_funds(&depositor, &1, &100, &deadline);
     assert!(result.is_err());
 }
 
@@ -218,7 +218,6 @@ fn test_batch_lock_blocked_when_lock_paused() {
             depositor: depositor.clone(),
             amount: 100,
             deadline,
-            non_transferable_rewards: false,
         }
     ];
     let result = client.try_batch_lock_funds(&items);
@@ -299,7 +298,7 @@ fn test_lock_allowed_when_only_release_paused() {
 
     client.set_paused(&None, &Some(true), &None, &None);
     let deadline = env.ledger().timestamp() + 1_000;
-    client.lock_funds(&depositor, &1, &100, &deadline, &None);
+    client.lock_funds(&depositor, &1, &100, &deadline);
 
     let escrow = client.get_escrow_info(&1);
     assert_eq!(escrow.amount, 100);
@@ -345,7 +344,7 @@ fn test_lock_allowed_when_only_refund_paused() {
 
     client.set_paused(&None, &None, &Some(true), &None);
     let deadline = env.ledger().timestamp() + 1_000;
-    client.lock_funds(&depositor, &1, &100, &deadline, &None);
+    client.lock_funds(&depositor, &1, &100, &deadline);
 
     let escrow = client.get_escrow_info(&1);
     assert_eq!(escrow.amount, 100);
@@ -377,7 +376,7 @@ fn test_lock_blocked_when_lock_and_release_paused() {
     client.set_paused(&Some(true), &Some(true), &None, &None);
     let deadline = env.ledger().timestamp() + 1_000;
     assert!(client
-        .try_lock_funds(&depositor, &1, &100, &deadline, &None)
+        .try_lock_funds(&depositor, &1, &100, &deadline)
         .is_err());
 }
 
@@ -420,7 +419,7 @@ fn test_lock_blocked_when_lock_and_refund_paused() {
     client.set_paused(&Some(true), &None, &Some(true), &None);
     let deadline = env.ledger().timestamp() + 1_000;
     assert!(client
-        .try_lock_funds(&depositor, &1, &100, &deadline, &None)
+        .try_lock_funds(&depositor, &1, &100, &deadline)
         .is_err());
 }
 
@@ -460,7 +459,7 @@ fn test_lock_allowed_when_release_and_refund_paused() {
 
     client.set_paused(&None, &Some(true), &Some(true), &None);
     let deadline = env.ledger().timestamp() + 1_000;
-    client.lock_funds(&depositor, &1, &250, &deadline, &None);
+    client.lock_funds(&depositor, &1, &250, &deadline);
 
     let escrow = client.get_escrow_info(&1);
     assert_eq!(escrow.amount, 250);
@@ -502,7 +501,7 @@ fn test_lock_blocked_when_all_paused() {
     client.set_paused(&Some(true), &Some(true), &Some(true), &None);
     let deadline = env.ledger().timestamp() + 1_000;
     assert!(client
-        .try_lock_funds(&depositor, &1, &100, &deadline, &None)
+        .try_lock_funds(&depositor, &1, &100, &deadline)
         .is_err());
 }
 
@@ -542,11 +541,11 @@ fn test_lock_restored_after_unpause() {
     client.set_paused(&Some(true), &None, &None, &None);
     let deadline = env.ledger().timestamp() + 1_000;
     assert!(client
-        .try_lock_funds(&depositor, &1, &100, &deadline, &None)
+        .try_lock_funds(&depositor, &1, &100, &deadline)
         .is_err());
 
     client.set_paused(&Some(false), &None, &None, &None);
-    client.lock_funds(&depositor, &1, &100, &deadline, &None);
+    client.lock_funds(&depositor, &1, &100, &deadline);
     let escrow = client.get_escrow_info(&1);
     assert_eq!(escrow.amount, 100);
 }
@@ -630,7 +629,6 @@ fn test_batch_lock_allowed_when_release_and_refund_paused() {
             depositor: depositor.clone(),
             amount: 200,
             deadline,
-            non_transferable_rewards: false,
         }
     ];
     let count = client.batch_lock_funds(&items);
@@ -808,11 +806,11 @@ fn test_rapid_toggle_lock_flag() {
         client.set_paused(&Some(true), &None, &None, &None);
         let deadline = env.ledger().timestamp() + 1_000;
         assert!(client
-            .try_lock_funds(&depositor, &(round * 2), &100, &deadline, &None)
+            .try_lock_funds(&depositor, &(round * 2), &100, &deadline)
             .is_err());
 
         client.set_paused(&Some(false), &None, &None, &None);
-        client.lock_funds(&depositor, &(round * 2 + 1), &100, &deadline, &None);
+        client.lock_funds(&depositor, &(round * 2 + 1), &100, &deadline);
     }
 }
 
@@ -917,21 +915,18 @@ fn test_batch_lock_multiple_items_succeeds_when_unpaused() {
             depositor: depositor.clone(),
             amount: 100,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 21,
             depositor: depositor.clone(),
             amount: 200,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 22,
             depositor: depositor.clone(),
             amount: 300,
             deadline,
-            non_transferable_rewards: false,
         }
     ];
     let count = client.batch_lock_funds(&items);
@@ -954,7 +949,6 @@ fn test_batch_lock_blocked_even_with_only_lock_paused() {
             depositor: depositor.clone(),
             amount: 100,
             deadline,
-            non_transferable_rewards: false,
         }
     ];
     assert!(client.try_batch_lock_funds(&items).is_err());

@@ -61,9 +61,9 @@ fn test_query_by_status_locked_returns_only_locked() {
     let s = Setup::new();
     let dl = s.env.ledger().timestamp() + 1000;
 
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &200, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &3, &300, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &200, &dl);
+    s.escrow.lock_funds(&s.depositor, &3, &300, &dl);
     s.escrow.release_funds(&2, &s.contributor);
 
     let results = s
@@ -80,9 +80,9 @@ fn test_query_by_status_released_returns_only_released() {
     let s = Setup::new();
     let dl = s.env.ledger().timestamp() + 1000;
 
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &200, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &3, &300, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &200, &dl);
+    s.escrow.lock_funds(&s.depositor, &3, &300, &dl);
     s.escrow.release_funds(&1, &s.contributor);
     s.escrow.release_funds(&3, &s.contributor);
 
@@ -104,9 +104,9 @@ fn test_query_by_status_refunded_returns_only_refunded() {
     let now = s.env.ledger().timestamp();
     let dl = now + 100;
 
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &200, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &3, &300, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &200, &dl);
+    s.escrow.lock_funds(&s.depositor, &3, &300, &dl);
     s.escrow.release_funds(&1, &s.contributor);
     s.env.ledger().set_timestamp(dl + 1);
     s.escrow.refund(&2);
@@ -129,8 +129,8 @@ fn test_query_by_status_empty_when_no_match() {
     let s = Setup::new();
     let dl = s.env.ledger().timestamp() + 1000;
 
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &200, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &200, &dl);
 
     let results = s
         .escrow
@@ -145,7 +145,7 @@ fn test_query_by_status_pagination_offset_and_limit() {
 
     for i in 1u64..=5 {
         s.escrow
-            .lock_funds(&s.depositor, &i, &(i as i128 * 100), &dl, &None);
+            .lock_funds(&s.depositor, &i, &(i as i128 * 100), &dl);
     }
 
     let page1 = s
@@ -180,10 +180,10 @@ fn test_query_by_amount_range_returns_matching_escrows() {
     let s = Setup::new();
     let dl = s.env.ledger().timestamp() + 1000;
 
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &500, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &3, &1000, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &4, &5000, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &500, &dl);
+    s.escrow.lock_funds(&s.depositor, &3, &1000, &dl);
+    s.escrow.lock_funds(&s.depositor, &4, &5000, &dl);
 
     let results = s.escrow.query_escrows_by_amount(&400, &1100, &0, &10);
     assert_eq!(results.len(), 2);
@@ -198,9 +198,9 @@ fn test_query_by_amount_exact_boundaries_included() {
     let s = Setup::new();
     let dl = s.env.ledger().timestamp() + 1000;
 
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &200, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &3, &300, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &200, &dl);
+    s.escrow.lock_funds(&s.depositor, &3, &300, &dl);
 
     let results = s.escrow.query_escrows_by_amount(&100, &300, &0, &10);
     assert_eq!(results.len(), 3);
@@ -211,8 +211,8 @@ fn test_query_by_amount_no_results_outside_range() {
     let s = Setup::new();
     let dl = s.env.ledger().timestamp() + 1000;
 
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &200, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &200, &dl);
 
     let results = s.escrow.query_escrows_by_amount(&5000, &9999, &0, &10);
     assert_eq!(results.len(), 0);
@@ -226,13 +226,13 @@ fn test_query_by_deadline_range_filters_correctly() {
     let base = s.env.ledger().timestamp();
 
     s.escrow
-        .lock_funds(&s.depositor, &1, &100, &(base + 100), &None);
+        .lock_funds(&s.depositor, &1, &100, &(base + 100));
     s.escrow
-        .lock_funds(&s.depositor, &2, &200, &(base + 500), &None);
+        .lock_funds(&s.depositor, &2, &200, &(base + 500));
     s.escrow
-        .lock_funds(&s.depositor, &3, &300, &(base + 1000), &None);
+        .lock_funds(&s.depositor, &3, &300, &(base + 1000));
     s.escrow
-        .lock_funds(&s.depositor, &4, &400, &(base + 9999), &None);
+        .lock_funds(&s.depositor, &4, &400, &(base + 9999));
 
     let results = s
         .escrow
@@ -250,11 +250,11 @@ fn test_query_by_deadline_exact_boundary_included() {
     let base = s.env.ledger().timestamp();
 
     s.escrow
-        .lock_funds(&s.depositor, &1, &100, &(base + 200), &None);
+        .lock_funds(&s.depositor, &1, &100, &(base + 200));
     s.escrow
-        .lock_funds(&s.depositor, &2, &200, &(base + 500), &None);
+        .lock_funds(&s.depositor, &2, &200, &(base + 500));
     s.escrow
-        .lock_funds(&s.depositor, &3, &300, &(base + 800), &None);
+        .lock_funds(&s.depositor, &3, &300, &(base + 800));
 
     let results = s
         .escrow
@@ -271,9 +271,9 @@ fn test_query_by_depositor_returns_only_that_depositors_escrows() {
     let depositor2 = Address::generate(&s.env);
     s.token_admin.mint(&depositor2, &10_000);
 
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &200, &dl, &None);
-    s.escrow.lock_funds(&depositor2, &3, &300, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &200, &dl);
+    s.escrow.lock_funds(&depositor2, &3, &300, &dl);
 
     let r1 = s.escrow.query_escrows_by_depositor(&s.depositor, &0, &10);
     assert_eq!(r1.len(), 2);
@@ -301,9 +301,9 @@ fn test_get_escrow_ids_by_status_returns_correct_ids() {
     let s = Setup::new();
     let dl = s.env.ledger().timestamp() + 1000;
 
-    s.escrow.lock_funds(&s.depositor, &10, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &20, &200, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &30, &300, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &10, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &20, &200, &dl);
+    s.escrow.lock_funds(&s.depositor, &30, &300, &dl);
     s.escrow.release_funds(&20, &s.contributor);
 
     let locked_ids = s
@@ -325,7 +325,7 @@ fn test_get_escrow_ids_by_status_returns_correct_ids() {
 fn test_get_escrow_ids_by_status_empty_when_no_match() {
     let s = Setup::new();
     let dl = s.env.ledger().timestamp() + 1000;
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
 
     let ids = s
         .escrow
@@ -340,9 +340,9 @@ fn test_combined_status_and_amount_filter_via_manual_compose() {
     let s = Setup::new();
     let dl = s.env.ledger().timestamp() + 1000;
 
-    s.escrow.lock_funds(&s.depositor, &1, &50, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &500, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &3, &5000, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &50, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &500, &dl);
+    s.escrow.lock_funds(&s.depositor, &3, &5000, &dl);
     s.escrow.release_funds(&2, &s.contributor);
 
     // Step 1: filter by status=Locked
@@ -372,10 +372,10 @@ fn test_aggregate_stats_reflects_correct_counts_after_lifecycle() {
     let now = s.env.ledger().timestamp();
     let dl = now + 100;
 
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &200, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &3, &300, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &4, &400, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &200, &dl);
+    s.escrow.lock_funds(&s.depositor, &3, &300, &dl);
+    s.escrow.lock_funds(&s.depositor, &4, &400, &dl);
 
     s.escrow.release_funds(&1, &s.contributor);
     s.escrow.release_funds(&2, &s.contributor);
@@ -401,7 +401,7 @@ fn test_query_by_depositor_pagination_offset_skips_correctly() {
     // Lock 4 bounties for the same depositor
     for i in 1u64..=4 {
         s.escrow
-            .lock_funds(&s.depositor, &i, &(i as i128 * 100), &dl, &None);
+            .lock_funds(&s.depositor, &i, &(i as i128 * 100), &dl);
     }
 
     // Page 1: first 2
@@ -434,9 +434,9 @@ fn test_query_by_deadline_no_results_outside_range() {
     let base = s.env.ledger().timestamp();
 
     s.escrow
-        .lock_funds(&s.depositor, &1, &100, &(base + 100), &None);
+        .lock_funds(&s.depositor, &1, &100, &(base + 100));
     s.escrow
-        .lock_funds(&s.depositor, &2, &200, &(base + 200), &None);
+        .lock_funds(&s.depositor, &2, &200, &(base + 200));
 
     // Query a range that none of the deadlines fall into
     let results = s
@@ -453,7 +453,7 @@ fn test_get_escrow_ids_by_status_pagination_offset_and_limit() {
 
     for i in 1u64..=5 {
         s.escrow
-            .lock_funds(&s.depositor, &i, &(i as i128 * 50), &dl, &None);
+            .lock_funds(&s.depositor, &i, &(i as i128 * 50), &dl);
     }
 
     // All 5 are Locked — paginate in slices of 2
@@ -486,10 +486,10 @@ fn test_aggregate_stats_amounts_invariant_sum_equals_total_locked() {
     let dl = now + 100;
 
     // Lock 4 bounties with known amounts: 100 + 200 + 300 + 400 = 1000
-    s.escrow.lock_funds(&s.depositor, &1, &100, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &2, &200, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &3, &300, &dl, &None);
-    s.escrow.lock_funds(&s.depositor, &4, &400, &dl, &None);
+    s.escrow.lock_funds(&s.depositor, &1, &100, &dl);
+    s.escrow.lock_funds(&s.depositor, &2, &200, &dl);
+    s.escrow.lock_funds(&s.depositor, &3, &300, &dl);
+    s.escrow.lock_funds(&s.depositor, &4, &400, &dl);
 
     // Release bounty 1 and 2
     s.escrow.release_funds(&1, &s.contributor);

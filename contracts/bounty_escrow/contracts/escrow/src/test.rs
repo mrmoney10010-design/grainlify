@@ -171,7 +171,7 @@ fn test_lock_funds_success() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     let stored_escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(stored_escrow.depositor, setup.depositor);
@@ -193,11 +193,11 @@ fn test_lock_funds_duplicate() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 }
 
 #[test]
@@ -210,7 +210,7 @@ fn test_lock_funds_negative_amount() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 }
 
 #[test]
@@ -222,7 +222,7 @@ fn test_get_escrow_info() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     let escrow = setup.escrow.get_escrow_info(&bounty_id);
     assert_eq!(escrow.amount, amount);
@@ -241,7 +241,7 @@ fn test_release_funds_success() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     assert_eq!(setup.token.balance(&setup.escrow.address), amount);
     assert_eq!(setup.token.balance(&setup.contributor), 0);
@@ -265,7 +265,7 @@ fn test_release_funds_already_released() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
@@ -289,7 +289,7 @@ fn test_refund_success() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.env.ledger().set_timestamp(deadline + 1);
 
@@ -318,7 +318,7 @@ fn test_refund_too_early() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.refund(&bounty_id);
 }
@@ -334,7 +334,7 @@ fn test_get_balance() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     assert_eq!(setup.escrow.get_balance(), amount);
 }
@@ -352,7 +352,7 @@ fn test_partial_release_single_minimum_unit() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     let payout = 1_i128;
     setup
@@ -375,7 +375,7 @@ fn test_partial_release_leaves_tiny_remainder() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     let payout = amount - 1;
     setup
@@ -398,7 +398,7 @@ fn test_partial_release_multiple_sequential_small_amounts() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     let payout_per_step = 10_i128;
     let steps = 10_i128;
@@ -436,7 +436,7 @@ fn test_partial_release_full_amount_in_one_shot_marks_released() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup
         .escrow
@@ -459,7 +459,7 @@ fn test_partial_release_overpayment_panics() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup
         .escrow
@@ -479,7 +479,7 @@ fn test_partial_release_exact_remaining_after_prior_release() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup
         .escrow
@@ -508,7 +508,7 @@ fn test_partial_release_zero_amount_rejected() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup
         .escrow
@@ -524,7 +524,7 @@ fn test_partial_release_remaining_amount_never_goes_negative() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     for payout in [3_i128, 3_i128, 1_i128] {
         setup
@@ -565,7 +565,7 @@ fn test_partial_release_on_already_released_bounty_panics() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
@@ -584,7 +584,7 @@ fn test_refund_after_partial_release_returns_only_remainder() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup
         .escrow
@@ -616,7 +616,7 @@ fn test_claim_within_window_transfers_funds() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.set_claim_window(&500_u64);
 
@@ -649,7 +649,7 @@ fn test_claim_after_window_expires_panics() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.set_claim_window(&200_u64);
     setup
@@ -671,7 +671,7 @@ fn test_cancel_pending_claim_restores_escrow() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.set_claim_window(&300_u64);
     setup
@@ -712,7 +712,7 @@ fn test_cancel_expired_claim_then_authorize_new_one() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.set_claim_window(&100_u64);
     setup
         .escrow
@@ -749,7 +749,7 @@ fn test_cancel_claim_then_use_release_funds_normally() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.set_claim_window(&300_u64);
     setup
@@ -777,7 +777,7 @@ fn test_claim_twice_panics() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.set_claim_window(&500_u64);
     setup
@@ -799,10 +799,10 @@ fn test_claim_does_not_affect_other_bounties() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_a, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_a, &amount, &deadline);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_b, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_b, &amount, &deadline);
 
     setup.escrow.set_claim_window(&500_u64);
     setup
@@ -828,7 +828,7 @@ fn test_authorize_claim_zero_window_expires_immediately() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup
         .escrow
@@ -851,7 +851,7 @@ fn test_claim_at_exact_window_boundary_succeeds() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.set_claim_window(&window);
     setup
@@ -884,7 +884,7 @@ fn test_authorize_claim_on_released_bounty() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
     setup
         .escrow
@@ -902,7 +902,7 @@ fn test_authorize_claim_on_refunded_bounty() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.env.ledger().set_timestamp(deadline + 1);
     setup.escrow.refund(&bounty_id);
@@ -920,7 +920,7 @@ fn test_authorize_claim_default_window_used_when_not_set() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     let auth_time = setup.env.ledger().timestamp();
     setup
@@ -941,7 +941,7 @@ fn test_set_claim_window_success() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.set_claim_window(&window);
 
@@ -970,7 +970,7 @@ fn test_authorize_claim_creates_pending_claim() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.escrow.set_claim_window(&400_u64);
     setup
@@ -1000,21 +1000,18 @@ fn test_batch_lock_funds_success() {
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 2,
             depositor: setup.depositor.clone(),
             amount: 2000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 3,
             depositor: setup.depositor.clone(),
             amount: 3000,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1090,7 +1087,6 @@ fn test_batch_lock_funds_single_item() {
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1116,7 +1112,6 @@ fn test_batch_lock_funds_exceeds_max_batch_size() {
             depositor: setup.depositor.clone(),
             amount: 100,
             deadline,
-            non_transferable_rewards: false,
         });
     }
 
@@ -1136,7 +1131,6 @@ fn test_batch_lock_funds_at_max_batch_size() {
             depositor: setup.depositor.clone(),
             amount: 100,
             deadline,
-            non_transferable_rewards: false,
         });
     }
 
@@ -1153,7 +1147,7 @@ fn test_batch_lock_funds_duplicate_bounty_id() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
 
     let items = vec![
         &setup.env,
@@ -1162,14 +1156,12 @@ fn test_batch_lock_funds_duplicate_bounty_id() {
             depositor: setup.depositor.clone(),
             amount: 2000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 2,
             depositor: setup.depositor.clone(),
             amount: 3000,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1189,14 +1181,12 @@ fn test_batch_lock_funds_duplicate_in_batch() {
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 1,
             depositor: setup.depositor.clone(),
             amount: 2000,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1216,21 +1206,18 @@ fn test_batch_lock_funds_triple_duplicate_in_batch() {
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 1,
             depositor: setup.depositor.clone(),
             amount: 2000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 1,
             depositor: setup.depositor.clone(),
             amount: 3000,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1251,21 +1238,18 @@ fn test_batch_lock_funds_non_adjacent_duplicates() {
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 2,
             depositor: setup.depositor.clone(),
             amount: 2000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 1,
             depositor: setup.depositor.clone(),
             amount: 3000,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1286,7 +1270,6 @@ fn test_batch_lock_funds_zero_amount() {
             depositor: setup.depositor.clone(),
             amount: 0,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1306,7 +1289,6 @@ fn test_batch_lock_funds_negative_amount() {
             depositor: setup.depositor.clone(),
             amount: -100,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1326,14 +1308,12 @@ fn test_batch_lock_funds_mixed_valid_invalid_amounts() {
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 2,
             depositor: setup.depositor.clone(),
             amount: 0,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1349,7 +1329,7 @@ fn test_batch_lock_funds_first_valid_second_exists() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &2, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &2, &1000, &deadline);
 
     let items = vec![
         &setup.env,
@@ -1358,14 +1338,12 @@ fn test_batch_lock_funds_first_valid_second_exists() {
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 2,
             depositor: setup.depositor.clone(),
             amount: 2000,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1381,7 +1359,7 @@ fn test_batch_operations_atomicity() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
 
     let items = vec![
         &setup.env,
@@ -1390,14 +1368,12 @@ fn test_batch_operations_atomicity() {
             depositor: setup.depositor.clone(),
             amount: 2000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 1,
             depositor: setup.depositor.clone(),
             amount: 3000,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1411,13 +1387,13 @@ fn test_batch_release_funds_success() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &2, &2000, &deadline, &None);
+        .lock_funds(&setup.depositor, &2, &2000, &deadline);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &3, &3000, &deadline, &None);
+        .lock_funds(&setup.depositor, &3, &3000, &deadline);
 
     let contributor1 = Address::generate(&setup.env);
     let contributor2 = Address::generate(&setup.env);
@@ -1511,7 +1487,7 @@ fn test_batch_release_funds_single_item() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
 
     let contributor = Address::generate(&setup.env);
     let items = vec![
@@ -1543,7 +1519,6 @@ fn test_batch_release_funds_exceeds_max_batch_size() {
             depositor: setup.depositor.clone(),
             amount: 100,
             deadline,
-            non_transferable_rewards: false,
         });
     }
     setup.token_admin.mint(&setup.depositor, &10_000);
@@ -1585,12 +1560,12 @@ fn test_batch_release_funds_already_released() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
     setup.escrow.release_funds(&1, &setup.contributor);
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &2, &2000, &deadline, &None);
+        .lock_funds(&setup.depositor, &2, &2000, &deadline);
 
     let contributor2 = Address::generate(&setup.env);
 
@@ -1617,7 +1592,7 @@ fn test_batch_release_funds_duplicate_in_batch() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
 
     let contributor = Address::generate(&setup.env);
 
@@ -1644,7 +1619,7 @@ fn test_batch_release_funds_first_valid_second_not_found() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
 
     let contributor = Address::generate(&setup.env);
     let items = vec![
@@ -1670,10 +1645,10 @@ fn test_batch_release_funds_mixed_locked_and_refunded() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &2, &2000, &deadline, &None);
+        .lock_funds(&setup.depositor, &2, &2000, &deadline);
 
     setup.env.ledger().set_timestamp(deadline + 1);
     setup.escrow.refund(&2);
@@ -1702,10 +1677,10 @@ fn test_batch_release_funds_non_adjacent_duplicates() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &2, &2000, &deadline, &None);
+        .lock_funds(&setup.depositor, &2, &2000, &deadline);
 
     let contributor = Address::generate(&setup.env);
     let items = vec![
@@ -1739,7 +1714,6 @@ fn test_batch_operations_large_batch() {
             depositor: setup.depositor.clone(),
             amount: (i * 100) as i128,
             deadline,
-            non_transferable_rewards: false,
         });
     }
 
@@ -1783,21 +1757,18 @@ fn test_batch_operations_multiple_depositors() {
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 2,
             depositor: depositor2.clone(),
             amount: 2000,
             deadline,
-            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 3,
             depositor: setup.depositor.clone(),
             amount: 3000,
             deadline,
-            non_transferable_rewards: false,
         },
     ];
 
@@ -1827,13 +1798,13 @@ fn test_batch_release_funds_to_multiple_contributors() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &1, &1000, &deadline, &None);
+        .lock_funds(&setup.depositor, &1, &1000, &deadline);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &2, &2000, &deadline, &None);
+        .lock_funds(&setup.depositor, &2, &2000, &deadline);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &3, &3000, &deadline, &None);
+        .lock_funds(&setup.depositor, &3, &3000, &deadline);
 
     let contributor1 = Address::generate(&setup.env);
     let contributor2 = Address::generate(&setup.env);

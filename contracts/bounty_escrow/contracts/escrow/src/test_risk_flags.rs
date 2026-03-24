@@ -38,6 +38,7 @@ fn test_escrow_risk_flags_set_clear_and_persist() {
         &123,
         &456,
         &soroban_sdk::String::from_str(&env, "bug_fix"),
+        &None,
     );
 
     let fetched = client.get_metadata(&bounty_id);

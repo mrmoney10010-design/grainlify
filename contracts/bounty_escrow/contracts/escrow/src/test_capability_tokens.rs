@@ -59,7 +59,7 @@ impl CapabilitySetup {
     fn lock(&self, bounty_id: u64, amount: i128) {
         let deadline = self.env.ledger().timestamp() + 10_000;
         self.client
-            .lock_funds(&self.depositor, &bounty_id, &amount, &deadline, &None);
+            .lock_funds(&self.depositor, &bounty_id, &amount, &deadline);
     }
 }
 

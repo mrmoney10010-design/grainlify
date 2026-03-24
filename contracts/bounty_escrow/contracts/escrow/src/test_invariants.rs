@@ -36,7 +36,7 @@ fn test_invariant_checker_ci_called_in_major_bounty_flows() {
     let amount = 10_000_i128;
     let deadline = env.ledger().timestamp() + 1000;
 
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
     client.release_funds(&bounty_id, &contributor);
 
     let calls = env.as_contract(&client.address, || invariants::call_count_for_test(&env));
@@ -91,7 +91,7 @@ fn test_invariant_checker_ci_panics_when_disabled() {
         invariants::set_disabled_for_test(&env, true);
     });
 
-    client.lock_funds(&depositor, &7_u64, &5_000_i128, &500, &None);
+    client.lock_funds(&depositor, &7_u64, &5_000_i128, &500);
 }
 
 // ==================== STATE VERIFICATION TESTS ====================

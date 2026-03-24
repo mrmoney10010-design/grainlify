@@ -37,6 +37,15 @@ impl<'a> Setup<'a> {
     }
 }
 
+fn get_claim_ticket(env: &Env, contract: &Address, ticket_id: u64) -> ClaimTicket {
+    env.as_contract(contract, || {
+        env.storage()
+            .persistent()
+            .get::<DataKey, ClaimTicket>(&DataKey::ClaimTicket(ticket_id))
+            .expect("claim ticket should exist")
+    })
+}
+
 #[test]
 fn test_deterministic_winner_is_stable_for_same_inputs() {
     let s = Setup::new();
@@ -120,7 +129,7 @@ fn test_issue_claim_ticket_deterministic_issues_for_derived_winner() {
         &expires_at,
         &seed,
     );
-    let ticket = s.client.get_claim_ticket(&ticket_id);
+    let ticket = get_claim_ticket(&s.env, &s.client.address, ticket_id);
 
     assert_eq!(ticket.beneficiary, derived_winner);
     assert_eq!(ticket.amount, claim_amount);

@@ -40,7 +40,7 @@ mod cross_contract_interface_tests {
         let deadline = env.ledger().timestamp() + 3600;
 
         // lock_funds returns unit, panics on error
-        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         // Verify escrow was created
         let escrow = client.get_escrow_info(&bounty_id);
@@ -70,7 +70,7 @@ mod cross_contract_interface_tests {
         let amount = 1000i128;
         let deadline = env.ledger().timestamp() + 3600;
 
-        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         // Release funds
         client.release_funds(&bounty_id, &contributor);
@@ -101,7 +101,7 @@ mod cross_contract_interface_tests {
         let amount = 1000i128;
         let deadline = env.ledger().timestamp() + 100;
 
-        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         // Move time past deadline
         env.ledger().set_timestamp(deadline + 1);
@@ -137,7 +137,7 @@ mod cross_contract_interface_tests {
         let deadline = env.ledger().timestamp() + 3600;
 
         // Lock
-        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         // Verify locked
         let escrow = client.get_escrow_info(&bounty_id);
@@ -175,7 +175,7 @@ mod cross_contract_interface_tests {
         let deadline = env.ledger().timestamp() + 3600;
 
         // These calls should work - they panic on error so just calling is the test
-        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         let _balance = client.get_balance();
 
@@ -204,7 +204,7 @@ mod cross_contract_interface_tests {
         let deadline = env.ledger().timestamp() + 3600;
 
         // First lock should succeed
-        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         // Verify the bounty exists by checking escrow info
         let escrow = client.get_escrow_info(&bounty_id);
@@ -233,7 +233,7 @@ mod cross_contract_interface_tests {
         let amount = 1000i128;
         let deadline = env.ledger().timestamp() + 3600;
 
-        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         // Multiple calls to get_escrow_info should return consistent state
         let escrow1 = client.get_escrow_info(&bounty_id);
@@ -267,7 +267,7 @@ mod cross_contract_interface_tests {
         let amount = 1000i128;
         let deadline = env.ledger().timestamp() + 3600;
 
-        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         // Partial release
         let partial_amount = 300i128;
@@ -300,7 +300,7 @@ mod cross_contract_interface_tests {
         // Lock multiple bounties sequentially
         for i in 0..3 {
             let bounty_id = i as u64;
-            client.lock_funds(&depositor, &bounty_id, &1000i128, &deadline, &None);
+            client.lock_funds(&depositor, &bounty_id, &1000i128, &deadline);
         }
 
         // Verify all three bounties are locked

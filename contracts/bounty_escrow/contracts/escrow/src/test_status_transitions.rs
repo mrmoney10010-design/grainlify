@@ -72,7 +72,7 @@ fn test_locked_to_released() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     assert_eq!(
         setup.escrow.get_escrow_info(&bounty_id).status,
         EscrowStatus::Locked
@@ -95,7 +95,7 @@ fn test_locked_to_refunded() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     assert_eq!(
         setup.escrow.get_escrow_info(&bounty_id).status,
         EscrowStatus::Locked
@@ -128,7 +128,7 @@ fn test_locked_to_partially_refunded() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     assert_eq!(
         setup.escrow.get_escrow_info(&bounty_id).status,
         EscrowStatus::Locked
@@ -155,7 +155,7 @@ fn test_partially_refunded_to_refunded() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // First partial refund
     setup
@@ -196,12 +196,12 @@ fn test_released_to_locked_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 }
 
 // Invalid transition: Released → Released
@@ -215,7 +215,7 @@ fn test_released_to_released_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
@@ -232,7 +232,7 @@ fn test_released_to_refunded_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     setup.env.ledger().set(LedgerInfo {
@@ -259,7 +259,7 @@ fn test_released_to_partially_refunded_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.escrow.release_funds(&bounty_id, &setup.contributor);
 
     setup.env.ledger().set(LedgerInfo {
@@ -288,7 +288,7 @@ fn test_refunded_to_locked_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.env.ledger().set(LedgerInfo {
         timestamp: deadline + 1,
         protocol_version: 20,
@@ -303,7 +303,7 @@ fn test_refunded_to_locked_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 }
 
 // Invalid transition: Refunded → Released
@@ -317,7 +317,7 @@ fn test_refunded_to_released_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.env.ledger().set(LedgerInfo {
         timestamp: deadline + 1,
         protocol_version: 20,
@@ -344,7 +344,7 @@ fn test_refunded_to_refunded_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.env.ledger().set(LedgerInfo {
         timestamp: deadline + 1,
         protocol_version: 20,
@@ -371,7 +371,7 @@ fn test_refunded_to_partially_refunded_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup.env.ledger().set(LedgerInfo {
         timestamp: deadline + 1,
         protocol_version: 20,
@@ -400,7 +400,7 @@ fn test_partially_refunded_to_locked_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup
         .escrow
         .approve_refund(&bounty_id, &500, &setup.depositor, &RefundMode::Partial);
@@ -408,7 +408,7 @@ fn test_partially_refunded_to_locked_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 }
 
 // Invalid transition: PartiallyRefunded → Released
@@ -422,7 +422,7 @@ fn test_partially_refunded_to_released_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
     setup
         .escrow
         .approve_refund(&bounty_id, &500, &setup.depositor, &RefundMode::Partial);

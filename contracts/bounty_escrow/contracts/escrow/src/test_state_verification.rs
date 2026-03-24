@@ -38,7 +38,7 @@ mod test {
         let amount = 1000i128;
         let deadline = env.ledger().timestamp() + 100;
 
-        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
 
         assert!(client.verify_state(&bounty_id));
     }
@@ -49,7 +49,7 @@ mod test {
         let (client, contract_id, _admin, depositor, _token_id) = setup_bounty(&env);
 
         let bounty_id = 1u64;
-        client.lock_funds(&depositor, &bounty_id, &1000i128, &100, &None);
+        client.lock_funds(&depositor, &bounty_id, &1000i128, &100);
 
         // TAMPER: Manually make remaining_amount > amount (must run in contract context)
         let mut escrow = client.get_escrow_info(&bounty_id);
@@ -72,7 +72,7 @@ mod test {
         let (client, contract_id, _admin, depositor, _token_id) = setup_bounty(&env);
 
         let bounty_id = 1u64;
-        client.lock_funds(&depositor, &bounty_id, &1000i128, &100, &None);
+        client.lock_funds(&depositor, &bounty_id, &1000i128, &100);
 
         // TAMPER: Manually set negative amount (must run in contract context)
         let mut escrow = client.get_escrow_info(&bounty_id);
@@ -95,7 +95,7 @@ mod test {
         let (client, contract_id, _admin, depositor, _token_id) = setup_bounty(&env);
 
         let bounty_id = 1u64;
-        client.lock_funds(&depositor, &bounty_id, &1000i128, &100, &None);
+        client.lock_funds(&depositor, &bounty_id, &1000i128, &100);
 
         // TAMPER: Mark as Released but keep remaining_amount > 0 (must run in contract context)
         let mut escrow = client.get_escrow_info(&bounty_id);

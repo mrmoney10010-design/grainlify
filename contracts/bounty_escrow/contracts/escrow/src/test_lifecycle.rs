@@ -80,7 +80,6 @@ fn test_full_bounty_lifecycle_with_refund() {
                 bounty_id,
                 initial_amount,
                 deadline,
-                Option::<bool>::None,
             )
                 .into_val(&env),
             sub_invokes: &[MockAuthInvoke {
@@ -98,7 +97,7 @@ fn test_full_bounty_lifecycle_with_refund() {
     }]);
     assert_eq!(token_client.balance(&depositor), 10000);
 
-    escrow_client.lock_funds(&depositor, &bounty_id, &initial_amount, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &bounty_id, &initial_amount, &deadline);
 
     // Verify Locked state
     let info = escrow_client.get_escrow_info(&bounty_id);
@@ -251,7 +250,7 @@ fn test_refund_after_deadline_no_approval_needed() {
 
     let bounty_id = 202;
     let deadline = env.ledger().timestamp() + 100;
-    escrow_client.lock_funds(&depositor, &bounty_id, &1000, &deadline, &None);
+    escrow_client.lock_funds(&depositor, &bounty_id, &1000, &deadline);
 
     // Attempt refund before deadline without approval - should fail
     let res = escrow_client.try_refund(&bounty_id);

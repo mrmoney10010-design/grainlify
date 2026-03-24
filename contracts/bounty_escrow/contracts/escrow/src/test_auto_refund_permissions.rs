@@ -67,7 +67,7 @@ fn test_auto_refund_anyone_can_trigger_after_deadline() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.env.ledger().set_timestamp(deadline + 1);
 
@@ -93,7 +93,7 @@ fn test_auto_refund_admin_can_trigger_after_deadline() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.env.ledger().set_timestamp(deadline + 1);
 
@@ -119,7 +119,7 @@ fn test_auto_refund_depositor_can_trigger_after_deadline() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.env.ledger().set_timestamp(deadline + 1);
 
@@ -146,7 +146,7 @@ fn test_auto_refund_fails_before_deadline() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Try to refund before deadline
     setup.escrow.refund(&bounty_id);
@@ -162,7 +162,7 @@ fn test_auto_refund_admin_cannot_bypass_deadline() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     // Admin tries to refund before deadline (should fail)
     setup.escrow.refund(&bounty_id);
@@ -177,7 +177,7 @@ fn test_auto_refund_at_exact_deadline() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.env.ledger().set_timestamp(deadline);
 
@@ -203,7 +203,7 @@ fn test_auto_refund_idempotent_second_call_fails() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.env.ledger().set_timestamp(deadline + 1);
 
@@ -223,7 +223,7 @@ fn test_auto_refund_balance_stable_after_first_refund() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id, &amount, &deadline);
 
     setup.env.ledger().set_timestamp(deadline + 1);
 
@@ -252,10 +252,10 @@ fn test_auto_refund_different_users_same_result() {
     // Lock two bounties
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id_1, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id_1, &amount, &deadline);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &bounty_id_2, &amount, &deadline, &None);
+        .lock_funds(&setup.depositor, &bounty_id_2, &amount, &deadline);
 
     setup.env.ledger().set_timestamp(deadline + 1);
 
