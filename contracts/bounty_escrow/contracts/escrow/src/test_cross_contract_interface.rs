@@ -1,9 +1,12 @@
 #[cfg(test)]
 mod cross_contract_interface_tests {
-    use crate::{BountyEscrowContract, EscrowStatus};
+    use crate::{
+        traits::{EscrowInterface, FeeInterface, PauseInterface, UpgradeInterface},
+        BountyEscrowContract, EscrowStatus, LockFundsItem, ReleaseFundsItem,
+    };
     use soroban_sdk::{
         testutils::{Address as _, Ledger},
-        token, Address, Env,
+        token, vec, Address, Env, Symbol, Vec,
     };
 
     fn create_token_contract<'a>(
@@ -309,5 +312,327 @@ mod cross_contract_interface_tests {
             let escrow = client.get_escrow_info(&bounty_id);
             assert_eq!(escrow.status, EscrowStatus::Locked);
         }
+    }
+
+    #[test]
+    fn test_escrow_interface_trait_partial_release() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, BountyEscrowContract);
+        let client = crate::BountyEscrowContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let depositor = Address::generate(&env);
+        let contributor = Address::generate(&env);
+
+        let (token, token_admin) = create_token_contract(&env, &admin);
+        client.init(&admin, &token.address);
+
+        token_admin.mint(&depositor, &1_000_000);
+
+        let bounty_id = 1u64;
+        let amount = 1000i128;
+        let deadline = env.ledger().timestamp() + 3600;
+
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+
+        let escrow_before = client.get_escrow_info(&bounty_id);
+        assert_eq!(escrow_before.remaining_amount, amount);
+
+        env.as_contract(&contract_id, || {
+            <BountyEscrowContract as EscrowInterface>::partial_release(
+                &env,
+                bounty_id,
+                contributor.clone(),
+                300i128,
+            )
+            .unwrap();
+        });
+
+        let escrow_after = client.get_escrow_info(&bounty_id);
+        assert_eq!(escrow_after.remaining_amount, amount - 300);
+    }
+
+    #[test]
+    fn test_escrow_interface_trait_batch_lock_funds() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, BountyEscrowContract);
+        let client = crate::BountyEscrowContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let depositor = Address::generate(&env);
+
+        let (token, token_admin) = create_token_contract(&env, &admin);
+        client.init(&admin, &token.address);
+
+        token_admin.mint(&depositor, &3_000_000);
+
+        let deadline = env.ledger().timestamp() + 3600;
+
+        let items: Vec<LockFundsItem> = vec![
+            &env,
+            LockFundsItem {
+                bounty_id: 100,
+                depositor: depositor.clone(),
+                amount: 1000i128,
+                deadline,
+                non_transferable_rewards: false,
+            },
+            LockFundsItem {
+                bounty_id: 101,
+                depositor: depositor.clone(),
+                amount: 1000i128,
+                deadline,
+                non_transferable_rewards: false,
+            },
+            LockFundsItem {
+                bounty_id: 102,
+                depositor: depositor.clone(),
+                amount: 1000i128,
+                deadline,
+                non_transferable_rewards: false,
+            },
+        ];
+
+        let count = env.as_contract(&contract_id, || {
+            <BountyEscrowContract as EscrowInterface>::batch_lock_funds(&env, items).unwrap()
+        });
+        assert_eq!(count, 3);
+
+        for i in 100..103 {
+            let escrow = client.get_escrow_info(&i);
+            assert_eq!(escrow.status, EscrowStatus::Locked);
+        }
+    }
+
+    #[test]
+    fn test_escrow_interface_trait_batch_release_funds() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, BountyEscrowContract);
+        let client = crate::BountyEscrowContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let depositor = Address::generate(&env);
+        let contributor = Address::generate(&env);
+
+        let (token, token_admin) = create_token_contract(&env, &admin);
+        client.init(&admin, &token.address);
+
+        token_admin.mint(&depositor, &3_000_000);
+
+        let deadline = env.ledger().timestamp() + 3600;
+
+        let lock_items: Vec<LockFundsItem> = vec![
+            &env,
+            LockFundsItem {
+                bounty_id: 200,
+                depositor: depositor.clone(),
+                amount: 1000i128,
+                deadline,
+                non_transferable_rewards: false,
+            },
+            LockFundsItem {
+                bounty_id: 201,
+                depositor: depositor.clone(),
+                amount: 1000i128,
+                deadline,
+                non_transferable_rewards: false,
+            },
+        ];
+
+        env.as_contract(&contract_id, || {
+            <BountyEscrowContract as EscrowInterface>::batch_lock_funds(&env, lock_items).unwrap();
+        });
+
+        let release_items: Vec<ReleaseFundsItem> = vec![
+            &env,
+            ReleaseFundsItem {
+                bounty_id: 200,
+                contributor: contributor.clone(),
+            },
+            ReleaseFundsItem {
+                bounty_id: 201,
+                contributor: contributor.clone(),
+            },
+        ];
+
+        let count = client.batch_release_funds(&release_items);
+        assert_eq!(count, 2);
+
+        for i in 200..202 {
+            let escrow = client.get_escrow_info(&i);
+            assert_eq!(escrow.status, EscrowStatus::Released);
+        }
+    }
+
+    #[test]
+    fn test_escrow_interface_trait_refund() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, BountyEscrowContract);
+        let client = crate::BountyEscrowContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let depositor = Address::generate(&env);
+
+        let (token, token_admin) = create_token_contract(&env, &admin);
+        client.init(&admin, &token.address);
+
+        token_admin.mint(&depositor, &1_000_000);
+
+        let bounty_id = 1u64;
+        let amount = 1000i128;
+        let deadline = env.ledger().timestamp() + 100;
+
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+
+        env.ledger().set_timestamp(deadline + 1);
+
+        env.as_contract(&contract_id, || {
+            <BountyEscrowContract as EscrowInterface>::refund(&env, bounty_id).unwrap();
+        });
+
+        let escrow = client.get_escrow_info(&bounty_id);
+        assert_eq!(escrow.status, EscrowStatus::Refunded);
+    }
+
+    #[test]
+    fn test_escrow_interface_trait_get_balance() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, BountyEscrowContract);
+        let client = crate::BountyEscrowContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let depositor = Address::generate(&env);
+
+        let (token, token_admin) = create_token_contract(&env, &admin);
+        client.init(&admin, &token.address);
+
+        token_admin.mint(&depositor, &1_000_000);
+
+        let bounty_id = 1u64;
+        let amount = 1000i128;
+        let deadline = env.ledger().timestamp() + 3600;
+
+        client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
+
+        let balance = env.as_contract(&contract_id, || {
+            <BountyEscrowContract as EscrowInterface>::get_balance(&env).unwrap()
+        });
+        assert_eq!(balance, amount);
+    }
+
+    #[test]
+    fn test_upgrade_interface_maps_to_version_entrypoints() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, BountyEscrowContract);
+        let client = crate::BountyEscrowContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let (token, _) = create_token_contract(&env, &token_admin);
+        client.init(&admin, &token.address);
+
+        assert_eq!(client.get_version(), 1);
+        let initial_version = env.as_contract(&contract_id, || {
+            <BountyEscrowContract as UpgradeInterface>::get_version(&env)
+        });
+        assert_eq!(initial_version, 1);
+
+        env.as_contract(&contract_id, || {
+            <BountyEscrowContract as UpgradeInterface>::set_version(&env, 2).unwrap();
+        });
+
+        assert_eq!(client.get_version(), 2);
+        let updated_version = env.as_contract(&contract_id, || {
+            <BountyEscrowContract as UpgradeInterface>::get_version(&env)
+        });
+        assert_eq!(updated_version, 2);
+    }
+
+    #[test]
+    fn test_pause_interface_maps_to_pause_entrypoints() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, BountyEscrowContract);
+        let client = crate::BountyEscrowContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let (token, _) = create_token_contract(&env, &token_admin);
+        client.init(&admin, &token.address);
+
+        env.as_contract(&contract_id, || {
+            <BountyEscrowContract as PauseInterface>::set_paused(
+                &env,
+                Some(true),
+                Some(false),
+                Some(true),
+                Some(soroban_sdk::String::from_str(&env, "interface-test")),
+            )
+            .unwrap();
+        });
+
+        let flags = client.get_pause_flags();
+        assert!(flags.lock_paused);
+        assert!(!flags.release_paused);
+        assert!(flags.refund_paused);
+        let lock_paused = env.as_contract(&contract_id, || {
+            <BountyEscrowContract as PauseInterface>::is_operation_paused(
+                &env,
+                Symbol::new(&env, "lock"),
+            )
+        });
+        let release_paused = env.as_contract(&contract_id, || {
+            <BountyEscrowContract as PauseInterface>::is_operation_paused(
+                &env,
+                Symbol::new(&env, "release"),
+            )
+        });
+        assert_eq!(lock_paused, true);
+        assert_eq!(release_paused, false);
+    }
+
+    #[test]
+    fn test_fee_interface_maps_to_fee_entrypoints() {
+        let env = Env::default();
+        env.mock_all_auths();
+
+        let contract_id = env.register_contract(None, BountyEscrowContract);
+        let client = crate::BountyEscrowContractClient::new(&env, &contract_id);
+
+        let admin = Address::generate(&env);
+        let fee_recipient = Address::generate(&env);
+        let token_admin = Address::generate(&env);
+        let (token, _) = create_token_contract(&env, &token_admin);
+        client.init(&admin, &token.address);
+
+        env.as_contract(&contract_id, || {
+            <BountyEscrowContract as FeeInterface>::update_fee_config(
+                &env,
+                Some(125),
+                Some(250),
+                Some(fee_recipient.clone()),
+                Some(true),
+            )
+            .unwrap();
+        });
+
+        let config = client.get_fee_config();
+        assert_eq!(config.lock_fee_rate, 125);
+        assert_eq!(config.release_fee_rate, 250);
+        assert_eq!(config.fee_recipient, fee_recipient);
+        assert!(config.fee_enabled);
     }
 }

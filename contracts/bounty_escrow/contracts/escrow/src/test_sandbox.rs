@@ -85,7 +85,7 @@ fn test_sandbox_instance_isolation_lock() {
         invoke: &MockAuthInvoke {
             contract: &prod.address,
             fn_name: "lock_funds",
-            args: (depositor.clone(), bounty_id, amount, deadline).into_val(&env),
+            args: (depositor.clone(), bounty_id, amount, deadline, None::<bool>).into_val(&env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &token_client.address,
                 fn_name: "transfer",
@@ -94,7 +94,7 @@ fn test_sandbox_instance_isolation_lock() {
             }],
         },
     }]);
-    prod.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    prod.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
 
     // Prod balance increased; sandbox balance stays at zero.
     assert_eq!(prod.get_balance(), amount);
@@ -161,7 +161,7 @@ fn test_sandbox_instance_isolation_release() {
         invoke: &MockAuthInvoke {
             contract: &prod.address,
             fn_name: "lock_funds",
-            args: (depositor.clone(), bounty_id, amount, deadline).into_val(&env),
+            args: (depositor.clone(), bounty_id, amount, deadline, None::<bool>).into_val(&env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &token_client.address,
                 fn_name: "transfer",
@@ -170,7 +170,7 @@ fn test_sandbox_instance_isolation_release() {
             }],
         },
     }]);
-    prod.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    prod.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
 
     // Lock on sandbox.
     env.mock_auths(&[MockAuth {
@@ -178,7 +178,7 @@ fn test_sandbox_instance_isolation_release() {
         invoke: &MockAuthInvoke {
             contract: &sandbox.address,
             fn_name: "lock_funds",
-            args: (depositor.clone(), bounty_id, amount, deadline).into_val(&env),
+            args: (depositor.clone(), bounty_id, amount, deadline, None::<bool>).into_val(&env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &token_client.address,
                 fn_name: "transfer",
@@ -187,7 +187,7 @@ fn test_sandbox_instance_isolation_release() {
             }],
         },
     }]);
-    sandbox.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    sandbox.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
 
     assert_eq!(prod.get_balance(), amount);
     assert_eq!(sandbox.get_balance(), amount);
@@ -261,7 +261,14 @@ fn test_sandbox_same_bounty_id_no_conflict() {
         invoke: &MockAuthInvoke {
             contract: &instance_a.address,
             fn_name: "lock_funds",
-            args: (depositor.clone(), bounty_id, 1000i128, deadline).into_val(&env),
+            args: (
+                depositor.clone(),
+                bounty_id,
+                1000i128,
+                deadline,
+                None::<bool>,
+            )
+                .into_val(&env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &token_client.address,
                 fn_name: "transfer",
@@ -270,14 +277,21 @@ fn test_sandbox_same_bounty_id_no_conflict() {
             }],
         },
     }]);
-    instance_a.lock_funds(&depositor, &bounty_id, &1000, &deadline);
+    instance_a.lock_funds(&depositor, &bounty_id, &1000, &deadline, &None);
 
     env.mock_auths(&[MockAuth {
         address: &depositor,
         invoke: &MockAuthInvoke {
             contract: &instance_b.address,
             fn_name: "lock_funds",
-            args: (depositor.clone(), bounty_id, 7000i128, deadline).into_val(&env),
+            args: (
+                depositor.clone(),
+                bounty_id,
+                7000i128,
+                deadline,
+                None::<bool>,
+            )
+                .into_val(&env),
             sub_invokes: &[MockAuthInvoke {
                 contract: &token_client.address,
                 fn_name: "transfer",
@@ -286,7 +300,7 @@ fn test_sandbox_same_bounty_id_no_conflict() {
             }],
         },
     }]);
-    instance_b.lock_funds(&depositor, &bounty_id, &7000, &deadline);
+    instance_b.lock_funds(&depositor, &bounty_id, &7000, &deadline, &None);
 
     // Each instance tracks its own balance independently.
     assert_eq!(instance_a.get_balance(), 1000);

@@ -1040,18 +1040,21 @@ fn test_batch_lock_funds_deterministic_ordering_by_bounty_id() {
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
+            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 10,
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
+            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 20,
             depositor: setup.depositor.clone(),
             amount: 1000,
             deadline,
+            non_transferable_rewards: false,
         },
     ];
 
@@ -1436,13 +1439,13 @@ fn test_batch_release_funds_deterministic_ordering_by_bounty_id() {
 
     setup
         .escrow
-        .lock_funds(&setup.depositor, &10, &1000, &deadline);
+        .lock_funds(&setup.depositor, &10, &1000, &deadline, &None);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &20, &2000, &deadline);
+        .lock_funds(&setup.depositor, &20, &2000, &deadline, &None);
     setup
         .escrow
-        .lock_funds(&setup.depositor, &30, &3000, &deadline);
+        .lock_funds(&setup.depositor, &30, &3000, &deadline, &None);
 
     let contributor10 = Address::generate(&setup.env);
     let contributor20 = Address::generate(&setup.env);

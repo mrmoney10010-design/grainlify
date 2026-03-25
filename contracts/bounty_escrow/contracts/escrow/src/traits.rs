@@ -8,12 +8,29 @@
 //! implement the relevant trait so that wallets, indexers, and the view-facade
 //! can reason about any Grainlify contract uniformly.
 //!
-//! | Trait            | Purpose                                | Implemented by                       |
-//! |------------------|----------------------------------------|--------------------------------------|
-//! | EscrowInterface  | Core lock / release / refund lifecycle | BountyEscrowContract, EscrowContract  |
-//! | UpgradeInterface | Version tracking & WASM upgrades       | BountyEscrowContract, GrainlifyContract |
-//! | PauseInterface   | Granular per-operation pausing         | BountyEscrowContract                  |
-//! | FeeInterface     | Fee config read/write                  | BountyEscrowContract                  |
+//! ## Trait Mapping Table
+//!
+//! | Trait              | Purpose                                      | Implemented by                |
+//! |--------------------|----------------------------------------------|-------------------------------|
+//! | EscrowInterface    | Core lock / release / refund lifecycle       | BountyEscrowContract          |
+//! | EscrowInterface    | Batch operations (lock, release)              | BountyEscrowContract          |
+//! | EscrowInterface    | Partial release                               | BountyEscrowContract          |
+//! | UpgradeInterface   | Version tracking & WASM upgrades             | BountyEscrowContract          |
+//! | PauseInterface     | Granular per-operation pausing               | BountyEscrowContract          |
+//! | FeeInterface       | Fee config read/write                        | BountyEscrowContract          |
+//!
+//! ## Trait-to-Lib Entry Point Mapping
+//!
+//! | Trait Method          | lib.rs Entry Point       | Notes                                    |
+//! |-----------------------|--------------------------|------------------------------------------|
+//! | lock_funds            | lock_funds               | `non_transferable_rewards` always None   |
+//! | release_funds         | release_funds            | Admin-only full release                  |
+//! | partial_release       | partial_release          | Admin-only partial release               |
+//! | batch_lock_funds      | batch_lock_funds         | Batch variant of lock_funds              |
+//! | batch_release_funds   | batch_release_funds      | Batch variant of release_funds           |
+//! | refund                | refund                   | Deadline-gated refund                    |
+//! | get_escrow_info       | get_escrow_info          | Returns escrow state                     |
+//! | get_balance           | get_balance              | Returns contract token balance          |
 //!
 //! ## Adding a New Contract
 //!
@@ -21,7 +38,7 @@
 //! 2. Add a row to the table above.
 //! 3. Register the contract address in the view-facade via `ViewFacade::register`.
 
-use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
+use soroban_sdk::{symbol_short, Address, Env, String, Symbol, Vec};
 
 // ============================================================================
 // EscrowInterface
@@ -41,6 +58,8 @@ use soroban_sdk::{symbol_short, Address, Env, String, Symbol};
 #[allow(dead_code)]
 pub trait EscrowInterface {
     /// Lock `amount` tokens from `depositor` for `bounty_id` until `deadline`.
+    /// Note: `non_transferable_rewards` is always set to `None` in this trait;
+    /// use the concrete contract to set it.
     fn lock_funds(
         env: &Env,
         depositor: Address,
@@ -51,6 +70,23 @@ pub trait EscrowInterface {
 
     /// Release the full locked amount to `contributor`. Admin-only.
     fn release_funds(env: &Env, bounty_id: u64, contributor: Address) -> Result<(), crate::Error>;
+
+    /// Release a partial `payout_amount` to `contributor`. Admin-only.
+    fn partial_release(
+        env: &Env,
+        bounty_id: u64,
+        contributor: Address,
+        payout_amount: i128,
+    ) -> Result<(), crate::Error>;
+
+    /// Lock multiple escrows in a batch. Returns count of successfully locked items.
+    fn batch_lock_funds(env: &Env, items: Vec<crate::LockFundsItem>) -> Result<u32, crate::Error>;
+
+    /// Release multiple escrows in a batch. Returns count of successfully released items.
+    fn batch_release_funds(
+        env: &Env,
+        items: Vec<crate::ReleaseFundsItem>,
+    ) -> Result<u32, crate::Error>;
 
     /// Refund the remaining amount to the original depositor.
     /// Only callable after the escrow deadline has passed (or with admin approval).
@@ -80,9 +116,7 @@ pub trait UpgradeInterface {
     fn get_version(env: &Env) -> u32;
 
     /// Overwrite the stored version number. Admin-only in all implementations.
-    ///
-    /// Returns `Err(String)` with a human-readable message on failure.
-    fn set_version(env: &Env, new_version: u32) -> Result<(), String>;
+    fn set_version(env: &Env, new_version: u32) -> Result<(), crate::Error>;
 }
 
 // ============================================================================

@@ -36,7 +36,7 @@ fn test_receipt_emitted_and_verifiable_after_release() {
     let bounty_id = 1u64;
     let amount = 3_000i128;
     let deadline = env.ledger().timestamp() + 1000;
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
 
     let before_ts = env.ledger().timestamp();
     env.ledger().set_timestamp(before_ts + 100);
@@ -67,7 +67,7 @@ fn test_receipt_emitted_and_verifiable_after_refund() {
     let bounty_id = 2u64;
     let amount = 2_000i128;
     let deadline = env.ledger().timestamp() + 1000;
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
 
     env.ledger().set_timestamp(env.ledger().timestamp() + 2000);
     client.refund(&bounty_id);
@@ -93,8 +93,8 @@ fn test_multiple_receipts_and_verify_nonexistent() {
 
     token_admin.mint(&depositor, &20_000);
     let deadline = env.ledger().timestamp() + 1000;
-    client.lock_funds(&depositor, &1, &5_000, &deadline);
-    client.lock_funds(&depositor, &2, &5_000, &deadline);
+    client.lock_funds(&depositor, &1, &5_000, &deadline, &None);
+    client.lock_funds(&depositor, &2, &5_000, &deadline, &None);
 
     client.release_funds(&1, &contributor);
     let escrow_1 = client.get_escrow_info(&1);

@@ -63,9 +63,9 @@ fn test_invariant_checker_ci_all_three_flows_increment_call_count() {
     let deadline_short = now + 100;
     let deadline_later = now + 2000;
 
-    client.lock_funds(&depositor, &lock_id, &amount, &deadline_later);
-    client.lock_funds(&depositor, &release_id, &amount, &deadline_later);
-    client.lock_funds(&depositor, &refund_id, &amount, &deadline_short);
+    client.lock_funds(&depositor, &lock_id, &amount, &deadline_later, &None);
+    client.lock_funds(&depositor, &release_id, &amount, &deadline_later, &None);
+    client.lock_funds(&depositor, &refund_id, &amount, &deadline_short, &None);
 
     let contributor = Address::generate(&env);
     client.release_funds(&release_id, &contributor);
@@ -107,7 +107,7 @@ fn test_invariant_checker_healthy_locked_state() {
     let deadline = env.ledger().timestamp() + 1000;
 
     // Lock funds - should pass invariants
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
 
     // Verify invariants pass for locked state
     let escrow_data = client.get_escrow_info(&bounty_id);
@@ -132,7 +132,7 @@ fn test_invariant_checker_healthy_released_state() {
     let contributor = Address::generate(&env);
 
     // Lock and release funds - should pass invariants
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
     client.release_funds(&bounty_id, &contributor);
 
     // Verify invariants pass for released state
@@ -157,7 +157,7 @@ fn test_invariant_checker_healthy_refunded_state() {
     let deadline = env.ledger().timestamp() + 1000;
 
     // Lock funds - should pass invariants
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
 
     // Approve refund and execute - should pass invariants
     client.approve_refund(&bounty_id, &amount, &depositor, &RefundMode::Full);
@@ -324,7 +324,7 @@ fn test_invariant_checker_partial_refund_state() {
     let deadline = env.ledger().timestamp() + 1000;
 
     // Lock funds
-    client.lock_funds(&depositor, &bounty_id, &amount, &deadline);
+    client.lock_funds(&depositor, &bounty_id, &amount, &deadline, &None);
 
     // Create a partially refunded state manually for testing
     let partially_refunded_escrow = Escrow {

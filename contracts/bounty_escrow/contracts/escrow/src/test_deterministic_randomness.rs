@@ -105,7 +105,7 @@ fn test_issue_claim_ticket_deterministic_issues_for_derived_winner() {
     let deadline = s.env.ledger().timestamp() + 1_000;
     token_admin_client.mint(&s.depositor, &lock_amount);
     s.client
-        .lock_funds(&s.depositor, &bounty_id, &lock_amount, &deadline);
+        .lock_funds(&s.depositor, &bounty_id, &lock_amount, &deadline, &None);
 
     let mut candidates = SdkVec::new(&s.env);
     candidates.push_back(Address::generate(&s.env));

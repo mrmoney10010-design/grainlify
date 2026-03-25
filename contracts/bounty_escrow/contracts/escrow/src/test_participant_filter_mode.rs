@@ -50,7 +50,7 @@ fn test_default_mode_is_disabled() {
     let (client, depositor, _other, _token) = setup(&env);
     assert_eq!(client.get_filter_mode(), ParticipantFilterMode::Disabled);
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &1, &100, &deadline);
+    client.lock_funds(&depositor, &1, &100, &deadline, &None);
     // Any address can lock when mode is Disabled
 }
 
@@ -63,11 +63,11 @@ fn test_blocklist_only_rejects_blocklisted() {
     client.set_blocklist_entry(&depositor, &true);
 
     let deadline = env.ledger().timestamp() + 86_400;
-    let res = client.try_lock_funds(&depositor, &1, &100, &deadline);
+    let res = client.try_lock_funds(&depositor, &1, &100, &deadline, &None);
     assert!(res.is_err());
 
     // Non-blocklisted can lock
-    client.lock_funds(&other, &2, &100, &deadline);
+    client.lock_funds(&other, &2, &100, &deadline, &None);
 }
 
 #[test]
@@ -78,8 +78,8 @@ fn test_blocklist_only_allows_non_blocklisted() {
     client.set_filter_mode(&ParticipantFilterMode::BlocklistOnly);
     // depositor not blocklisted
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &1, &100, &deadline);
-    client.lock_funds(&other, &2, &100, &deadline);
+    client.lock_funds(&depositor, &1, &100, &deadline, &None);
+    client.lock_funds(&other, &2, &100, &deadline, &None);
 }
 
 #[test]
@@ -92,9 +92,9 @@ fn test_allowlist_only_rejects_non_allowlisted() {
     // other is not on allowlist
 
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &1, &100, &deadline);
+    client.lock_funds(&depositor, &1, &100, &deadline, &None);
 
-    let res = client.try_lock_funds(&other, &2, &100, &deadline);
+    let res = client.try_lock_funds(&other, &2, &100, &deadline, &None);
     assert!(res.is_err());
 }
 
@@ -108,8 +108,8 @@ fn test_allowlist_only_allows_allowlisted() {
     client.set_whitelist_entry(&other, &true);
 
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &1, &100, &deadline);
-    client.lock_funds(&other, &2, &100, &deadline);
+    client.lock_funds(&depositor, &1, &100, &deadline, &None);
+    client.lock_funds(&other, &2, &100, &deadline, &None);
 }
 
 #[test]
@@ -127,9 +127,9 @@ fn test_mode_transition_disabled_to_blocklist_only() {
     client.set_blocklist_entry(&depositor, &true);
     let deadline = env.ledger().timestamp() + 86_400;
     assert!(client
-        .try_lock_funds(&depositor, &1, &100, &deadline)
+        .try_lock_funds(&depositor, &1, &100, &deadline, &None)
         .is_err());
-    client.lock_funds(&other, &2, &100, &deadline);
+    client.lock_funds(&other, &2, &100, &deadline, &None);
 }
 
 #[test]
@@ -140,13 +140,15 @@ fn test_mode_transition_blocklist_only_to_allowlist_only() {
     client.set_filter_mode(&ParticipantFilterMode::BlocklistOnly);
     client.set_blocklist_entry(&other, &true);
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &1, &100, &deadline);
+    client.lock_funds(&depositor, &1, &100, &deadline, &None);
 
     client.set_filter_mode(&ParticipantFilterMode::AllowlistOnly);
     client.set_whitelist_entry(&depositor, &true);
     // other is blocklisted but mode is now allowlist: other is not allowlisted so rejected
-    assert!(client.try_lock_funds(&other, &2, &100, &deadline).is_err());
-    client.lock_funds(&depositor, &3, &100, &deadline);
+    assert!(client
+        .try_lock_funds(&other, &2, &100, &deadline, &None)
+        .is_err());
+    client.lock_funds(&depositor, &3, &100, &deadline, &None);
 }
 
 #[test]
@@ -157,12 +159,14 @@ fn test_mode_transition_back_to_disabled() {
     client.set_filter_mode(&ParticipantFilterMode::AllowlistOnly);
     client.set_whitelist_entry(&depositor, &true);
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &1, &100, &deadline);
-    assert!(client.try_lock_funds(&other, &2, &100, &deadline).is_err());
+    client.lock_funds(&depositor, &1, &100, &deadline, &None);
+    assert!(client
+        .try_lock_funds(&other, &2, &100, &deadline, &None)
+        .is_err());
 
     client.set_filter_mode(&ParticipantFilterMode::Disabled);
     // With Disabled, other can now lock (no list check)
-    client.lock_funds(&other, &2, &100, &deadline);
+    client.lock_funds(&other, &2, &100, &deadline, &None);
 }
 
 #[test]
@@ -175,14 +179,18 @@ fn test_lists_persist_across_mode_switch() {
 
     client.set_filter_mode(&ParticipantFilterMode::AllowlistOnly);
     let deadline = env.ledger().timestamp() + 86_400;
-    client.lock_funds(&depositor, &1, &100, &deadline);
-    assert!(client.try_lock_funds(&other, &2, &100, &deadline).is_err());
+    client.lock_funds(&depositor, &1, &100, &deadline, &None);
+    assert!(client
+        .try_lock_funds(&other, &2, &100, &deadline, &None)
+        .is_err());
 
     client.set_filter_mode(&ParticipantFilterMode::Disabled);
     client.set_filter_mode(&ParticipantFilterMode::AllowlistOnly);
     // Still only depositor allowlisted; other still not on allowlist
-    assert!(client.try_lock_funds(&other, &3, &100, &deadline).is_err());
-    client.lock_funds(&depositor, &4, &100, &deadline);
+    assert!(client
+        .try_lock_funds(&other, &3, &100, &deadline, &None)
+        .is_err());
+    client.lock_funds(&depositor, &4, &100, &deadline, &None);
 }
 
 #[test]
@@ -201,12 +209,14 @@ fn test_batch_lock_funds_respects_filter_mode() {
             depositor: depositor.clone(),
             amount: 100,
             deadline,
+            non_transferable_rewards: false,
         },
         LockFundsItem {
             bounty_id: 11,
             depositor: other.clone(),
             amount: 100,
             deadline,
+            non_transferable_rewards: false,
         },
     ];
     let res = client.try_batch_lock_funds(&items);

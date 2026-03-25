@@ -1222,7 +1222,7 @@ fn test_monitoring_analytics_tracks_successful_operations() {
     let now = env.ledger().timestamp();
 
     // 1. Lock (Success)
-    escrow.lock_funds(&depositor, &500, &1000, &(now + 1000));
+    escrow.lock_funds(&depositor, &500, &1000, &(now + 1000), &None);
     let analytics = escrow.get_analytics();
     assert_eq!(analytics.operation_count, 1);
     assert_eq!(analytics.error_count, 0);
@@ -1248,7 +1248,7 @@ fn test_monitoring_analytics_tracks_failed_operations() {
     let now = env.ledger().timestamp();
 
     // 1. Successful Lock (tracked via wrapper)
-    escrow.lock_funds(&depositor, &600, &1000, &(now + 1000));
+    escrow.lock_funds(&depositor, &600, &1000, &(now + 1000), &None);
     let analytics_mid = escrow.get_analytics();
     assert_eq!(
         analytics_mid.operation_count, 1,
@@ -1295,7 +1295,7 @@ fn test_monitoring_state_snapshot_captures_current_metrics() {
     token_admin.mint(&depositor, &1_000_000);
 
     let now = env.ledger().timestamp();
-    escrow.lock_funds(&depositor, &700, &1000, &(now + 1000));
+    escrow.lock_funds(&depositor, &700, &1000, &(now + 1000), &None);
 
     let snapshot = escrow.get_state_snapshot();
     assert_eq!(snapshot.total_operations, 1);
@@ -1317,9 +1317,9 @@ fn test_comprehensive_analytics_flow() {
     let now = env.ledger().timestamp();
 
     // 1. Lock 3 different bounties
-    escrow.lock_funds(&depositor, &100, &1000, &(now + 1000));
-    escrow.lock_funds(&depositor, &200, &2000, &(now + 2000));
-    escrow.lock_funds(&depositor, &300, &3000, &(now + 3000));
+    escrow.lock_funds(&depositor, &100, &1000, &(now + 1000), &None);
+    escrow.lock_funds(&depositor, &200, &2000, &(now + 2000), &None);
+    escrow.lock_funds(&depositor, &300, &3000, &(now + 3000), &None);
 
     // 2. Release one
     escrow.release_funds(&100, &contributor);

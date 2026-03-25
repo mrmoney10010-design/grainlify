@@ -650,6 +650,7 @@ pub struct EscrowInfo {
 pub enum DataKey {
     Admin,
     Token,
+    Version,
     Escrow(u64),     // bounty_id
     EscrowAnon(u64), // bounty_id anonymous escrow variant
     Metadata(u64),
@@ -954,6 +955,7 @@ impl BountyEscrowContract {
         }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
+        env.storage().instance().set(&DataKey::Version, &1u32);
 
         events::emit_bounty_initialized(
             &env,
@@ -994,6 +996,25 @@ impl BountyEscrowContract {
         env: Env,
     ) -> (Option<soroban_sdk::String>, Option<soroban_sdk::String>) {
         (Self::get_chain_id(env.clone()), Self::get_network_id(env))
+    }
+
+    /// Return the persisted contract version.
+    pub fn get_version(env: Env) -> u32 {
+        env.storage().instance().get(&DataKey::Version).unwrap_or(0)
+    }
+
+    /// Update the persisted contract version (admin only).
+    pub fn set_version(env: Env, new_version: u32) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        env.storage()
+            .instance()
+            .set(&DataKey::Version, &new_version);
+        Ok(())
     }
 
     /// Calculate fee amount based on rate (in basis points), using **ceiling division**.
@@ -4921,14 +4942,12 @@ impl traits::EscrowInterface for BountyEscrowContract {
 impl traits::UpgradeInterface for BountyEscrowContract {
     /// Get contract version
     fn get_version(env: &Env) -> u32 {
-        1 // Current version
+        BountyEscrowContract::get_version(env.clone())
     }
 
     /// Set contract version (admin only)
-    fn set_version(env: &Env, _new_version: u32) -> Result<(), soroban_sdk::String> {
-        // Version management - reserved for future use
-        // Currently, version is hardcoded to 1
-        Ok(())
+    fn set_version(env: &Env, new_version: u32) -> Result<(), crate::Error> {
+        BountyEscrowContract::set_version(env.clone(), new_version)
     }
 }
 
