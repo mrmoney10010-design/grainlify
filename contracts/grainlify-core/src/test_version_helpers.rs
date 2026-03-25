@@ -107,7 +107,10 @@ fn numeric_encoded_boundary_9999_is_legacy() {
     let (env, client) = setup();
     init(&client, &env);
     client.set_version(&9_999u32);
-    assert_eq!(client.get_version_numeric_encoded(), 9_999u32.saturating_mul(10_000));
+    assert_eq!(
+        client.get_version_numeric_encoded(),
+        9_999u32.saturating_mul(10_000)
+    );
 }
 
 /// Boundary: value 10_000 is already encoded → returned as-is.
