@@ -744,12 +744,12 @@ impl GrainlifyContract {
 
         // Initialize multisig configuration
         MultiSig::init(&env, signers, threshold);
-        
+
         // Set initial version to mark contract as initialized
         env.storage().instance().set(&DataKey::Version, &VERSION);
 
         // Track successful operation
-        let caller = Address::generate(&env);
+        let caller = env.current_contract_address();
         monitoring::track_operation(&env, symbol_short!("init"), caller.clone(), true);
 
         // Track performance

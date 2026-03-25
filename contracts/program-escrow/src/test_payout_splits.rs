@@ -18,9 +18,9 @@ use soroban_sdk::{
 
 use crate::{
     payout_splits::{
-        BeneficiarySplit, SplitConfig, SplitPayoutResult, TOTAL_BASIS_POINTS,
-        disable_split_config, execute_split_payout, get_split_config, preview_split, set_split_config,
-        SplitConfigSetEvent, SplitPayoutEvent,
+        disable_split_config, execute_split_payout, get_split_config, preview_split,
+        set_split_config, BeneficiarySplit, SplitConfig, SplitConfigSetEvent, SplitPayoutEvent,
+        SplitPayoutResult, TOTAL_BASIS_POINTS,
     },
     DataKey, ProgramData, PROGRAM_DATA,
 };

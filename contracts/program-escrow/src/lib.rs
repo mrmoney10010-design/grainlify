@@ -469,9 +469,7 @@ pub enum DataKey {
     MaintenanceMode,                 // bool flag
     ProgramDependencies(String),     // program_id -> Vec<String>
     DependencyStatus(String),        // program_id -> DependencyStatus
-    SplitConfig(String),             // program_id -> SplitConfig (payout splits)
     Dispute,                         // DisputeRecord (single active dispute per contract)
-    SplitConfig(String),             // program_id -> SplitConfig
 }
 
 #[contracttype]
@@ -673,7 +671,7 @@ mod anti_abuse {
 mod claim_period;
 pub use claim_period::{ClaimRecord, ClaimStatus};
 mod payout_splits;
-pub use payout_splits::{BeneficiarySplit, SplitConfig};
+pub use payout_splits::{BeneficiarySplit, SplitConfig, SplitPayoutResult};
 #[cfg(test)]
 mod test_claim_period_expiry_cancellation;
 
@@ -688,14 +686,12 @@ mod test_circuit_breaker_audit;
 #[cfg(test)]
 mod error_recovery_tests;
 
-mod payout_splits;
 #[cfg(any())]
 mod reentrancy_tests;
 #[cfg(test)]
 mod test_dispute_resolution;
 mod threshold_monitor;
 mod token_math;
-pub use payout_splits::{BeneficiarySplit, SplitConfig, SplitPayoutResult};
 
 #[cfg(test)]
 mod reentrancy_guard_standalone_test;
@@ -1172,7 +1168,7 @@ impl ProgramEscrowContract {
 
         // Get fee configuration
         let fee_config = Self::get_fee_config_internal(&env);
-        
+
         // Calculate fees if enabled
         let (fee_amount, net_amount) = if fee_config.fee_enabled && fee_config.lock_fee_rate > 0 {
             let (fee, net) = token_math::split_amount(amount, fee_config.lock_fee_rate);
@@ -1193,7 +1189,7 @@ impl ProgramEscrowContract {
             .total_funds
             .checked_add(amount)
             .unwrap_or_else(|| panic!("Total funds overflow"));
-        
+
         program_data.remaining_balance = program_data
             .remaining_balance
             .checked_add(net_amount)
@@ -2732,42 +2728,6 @@ impl ProgramEscrowContract {
     /// Return the configured default claim window duration in seconds.
     pub fn get_claim_window(env: Env) -> u64 {
         claim_period::get_claim_window(&env)
-    }
-
-    // ========================================================================
-    // Payout Splits
-    // ========================================================================
-
-    pub fn set_split_config(
-        env: Env,
-        program_id: String,
-        beneficiaries: soroban_sdk::Vec<BeneficiarySplit>,
-    ) -> SplitConfig {
-        payout_splits::set_split_config(&env, &program_id, beneficiaries)
-    }
-
-    pub fn get_split_config(env: Env, program_id: String) -> Option<SplitConfig> {
-        payout_splits::get_split_config(&env, &program_id)
-    }
-
-    pub fn disable_split_config(env: Env, program_id: String) {
-        payout_splits::disable_split_config(&env, &program_id)
-    }
-
-    pub fn execute_split_payout(
-        env: Env,
-        program_id: String,
-        total_amount: i128,
-    ) -> SplitPayoutResult {
-        payout_splits::execute_split_payout(&env, &program_id, total_amount)
-    }
-
-    pub fn preview_split(
-        env: Env,
-        program_id: String,
-        total_amount: i128,
-    ) -> soroban_sdk::Vec<BeneficiarySplit> {
-        payout_splits::preview_split(&env, &program_id, total_amount)
     }
 
     // ========================================================================

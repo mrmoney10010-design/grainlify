@@ -1,8 +1,7 @@
 #![cfg(test)]
 
 use crate::{
-    governance, DataKey, GrainlifyContract, GrainlifyContractClient, GovernanceConfig,
-    VotingScheme,
+    governance, DataKey, GovernanceConfig, GrainlifyContract, GrainlifyContractClient, VotingScheme,
 };
 use soroban_sdk::{testutils::Address as _, Address, Env, String, Symbol, Vec};
 
@@ -359,7 +358,7 @@ fn test_init_governance_accepts_max_thresholds() {
     let gov_config = GovernanceConfig {
         voting_period: 86400,
         execution_delay: 3600,
-        quorum_percentage: 10000, // 100%
+        quorum_percentage: 10000,  // 100%
         approval_threshold: 10000, // 100%
         min_proposal_stake: 1000,
         voting_scheme: VotingScheme::OnePersonOneVote,

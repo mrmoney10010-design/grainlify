@@ -157,7 +157,7 @@ pub struct GovernanceContract;
 #[contractimpl]
 impl GovernanceContract {
     /// Initializes governance state for the standalone governance contract.
-    pub fn init_governance(
+    pub fn init_governance_state(
         env: Env,
         admin: Address,
         config: GovernanceConfig,
@@ -365,7 +365,7 @@ mod test {
         };
 
         env.mock_all_auths();
-        client.init_governance(&admin, &config);
+        client.init_governance_state(&admin, &config);
         (client, admin, user)
     }
 
