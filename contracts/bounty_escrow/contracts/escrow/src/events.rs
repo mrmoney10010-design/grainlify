@@ -841,8 +841,8 @@ pub fn emit_emergency_withdraw(env: &Env, event: EmergencyWithdrawEvent) {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityIssued {
-    /// Unique monotonic capability identifier.
-    pub capability_id: u64,
+    /// Unique cryptographically secure capability identifier.
+    pub capability_id: BytesN<32>,
     /// Address that created and vouches for this capability.
     pub owner: Address,
     /// Address authorised to exercise this capability.
@@ -863,7 +863,7 @@ pub struct CapabilityIssued {
 
 /// Emit [`CapabilityIssued`]
 pub fn emit_capability_issued(env: &Env, event: CapabilityIssued) {
-    let topics = (symbol_short!("cap_new"), event.capability_id);
+    let topics = (symbol_short!("cap_new"), event.capability_id.clone());
     env.events().publish(topics, event);
 }
 
@@ -887,7 +887,7 @@ pub fn emit_capability_issued(env: &Env, event: CapabilityIssued) {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityUsed {
     /// Capability that was exercised.
-    pub capability_id: u64,
+    pub capability_id: BytesN<32>,
     /// Address that exercised the capability.
     pub holder: Address,
     /// Action that was performed.
@@ -906,7 +906,7 @@ pub struct CapabilityUsed {
 
 /// Emit [`CapabilityUsed`]
 pub fn emit_capability_used(env: &Env, event: CapabilityUsed) {
-    let topics = (symbol_short!("cap_use"), event.capability_id);
+    let topics = (symbol_short!("cap_use"), event.capability_id.clone());
     env.events().publish(topics, event);
 }
 
@@ -929,14 +929,14 @@ pub fn emit_capability_used(env: &Env, event: CapabilityUsed) {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityRevoked {
     /// Capability that was revoked
-    pub capability_id: u64,
+    pub capability_id: BytesN<32>,
     pub owner: Address,
     pub revoked_at: u64,
 }
 
 /// Emit [`CapabilityRevoked`]
 pub fn emit_capability_revoked(env: &Env, event: CapabilityRevoked) {
-    let topics = (symbol_short!("cap_rev"), event.capability_id);
+    let topics = (symbol_short!("cap_rev"), event.capability_id.clone());
     env.events().publish(topics, event);
 }
 

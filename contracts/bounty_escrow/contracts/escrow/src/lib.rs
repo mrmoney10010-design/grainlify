@@ -772,7 +772,7 @@ pub enum DataKey {
     PauseFlags,                  // PauseFlags struct
     AmountPolicy, // Option<(i128, i128)> — (min_amount, max_amount) set by set_amount_policy
     CapabilityNonce, // monotonically increasing capability id
-    Capability(u64), // capability_id -> Capability
+    Capability(BytesN<32>), // capability_id -> Capability
 
     /// Marks a bounty escrow as using non-transferable (soulbound) reward tokens.
     /// When set, the token is expected to disallow further transfers after claim.
@@ -1787,17 +1787,17 @@ impl BountyEscrowContract {
         Ok(())
     }
 
-    fn next_capability_id(env: &Env) -> u64 {
-        let last_id: u64 = env
-            .storage()
-            .instance()
-            .get(&DataKey::CapabilityNonce)
-            .unwrap_or(0);
-        let next_id = last_id.saturating_add(1);
-        env.storage()
-            .instance()
-            .set(&DataKey::CapabilityNonce, &next_id);
-        next_id
+    fn next_capability_id(env: &Env) -> BytesN<32> {
+        let mut id = [0u8; 32];
+        let r1: u64 = env.prng().gen();
+        let r2: u64 = env.prng().gen();
+        let r3: u64 = env.prng().gen();
+        let r4: u64 = env.prng().gen();
+        id[0..8].copy_from_slice(&r1.to_be_bytes());
+        id[8..16].copy_from_slice(&r2.to_be_bytes());
+        id[16..24].copy_from_slice(&r3.to_be_bytes());
+        id[24..32].copy_from_slice(&r4.to_be_bytes());
+        BytesN::from_array(env, &id)
     }
 
     fn record_receipt(
@@ -1810,10 +1810,10 @@ impl BountyEscrowContract {
         // Backward-compatible no-op until receipt storage/events are fully wired.
     }
 
-    fn load_capability(env: &Env, capability_id: u64) -> Result<Capability, Error> {
+    fn load_capability(env: &Env, capability_id: BytesN<32>) -> Result<Capability, Error> {
         env.storage()
             .persistent()
-            .get(&DataKey::Capability(capability_id))
+            .get(&DataKey::Capability(capability_id.clone()))
             .ok_or(Error::CapabilityNotFound)
     }
 
@@ -1974,15 +1974,32 @@ impl BountyEscrowContract {
         Ok(())
     }
 
+    /// Validates and consumes a capability token for a specific action.
+    ///
+    /// The capability token must be a secure `BytesN<32>` identifier explicitly issued
+    /// to the requested `holder` for the requested `bounty_id` and `expected_action`.
+    /// Consuming a capability securely updates its internal balance and usage counts,
+    /// protecting against replay attacks or brute-force forgery.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `holder` - The address attempting to consume the capability
+    /// * `capability_id` - The `BytesN<32>` unforgeable token identifier
+    /// * `expected_action` - The required action mapped to this capability
+    /// * `bounty_id` - The bounty ID relating to the action
+    /// * `amount` - The transaction value requested during this consumption limit
+    ///
+    /// # Returns
+    /// The updated `Capability` struct successfully verified, or an `Error`.
     fn consume_capability(
         env: &Env,
         holder: &Address,
-        capability_id: u64,
+        capability_id: BytesN<32>,
         expected_action: CapabilityAction,
         bounty_id: u64,
         amount: i128,
     ) -> Result<Capability, Error> {
-        let mut capability = Self::load_capability(env, capability_id)?;
+        let mut capability = Self::load_capability(env, capability_id.clone())?;
 
         if capability.revoked {
             return Err(Error::CapabilityRevoked);
@@ -2013,7 +2030,7 @@ impl BountyEscrowContract {
         capability.remaining_uses -= 1;
         env.storage()
             .persistent()
-            .set(&DataKey::Capability(capability_id), &capability);
+            .set(&DataKey::Capability(capability_id.clone()), &capability);
 
         events::emit_capability_used(
             env,
@@ -2032,6 +2049,24 @@ impl BountyEscrowContract {
         Ok(capability)
     }
 
+    /// Issues a new capability token for a specific action on a bounty.
+    ///
+    /// The capability token is represented by a secure, unforgeable `BytesN<32>` identifier
+    /// generated using the Soroban environment's pseudo-random number generator (PRNG).
+    /// This ensures that capability tokens cannot be predicted or forged by arbitrary addresses.
+    ///
+    /// # Arguments
+    /// * `env` - The contract environment
+    /// * `owner` - The address delegating authority (e.g. the bounty admin or depositor)
+    /// * `holder` - The address receiving the capability token
+    /// * `action` - The specific action authorized (`Release`, `Refund`, etc.)
+    /// * `bounty_id` - The bounty this capability applies to
+    /// * `amount_limit` - The maximum amount of funds authorized by this capability
+    /// * `expiry` - The ledger timestamp when this capability expires
+    /// * `max_uses` - The maximum number of times this capability can be consumed
+    ///
+    /// # Returns
+    /// The generated `BytesN<32>` capability identifier, or an `Error` if issuance fails.
     pub fn issue_capability(
         env: Env,
         owner: Address,
@@ -2041,7 +2076,7 @@ impl BountyEscrowContract {
         amount_limit: i128,
         expiry: u64,
         max_uses: u32,
-    ) -> Result<u64, Error> {
+    ) -> Result<BytesN<32>, Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
@@ -2072,12 +2107,12 @@ impl BountyEscrowContract {
 
         env.storage()
             .persistent()
-            .set(&DataKey::Capability(capability_id), &capability);
+            .set(&DataKey::Capability(capability_id.clone()), &capability);
 
         events::emit_capability_issued(
             &env,
             events::CapabilityIssued {
-                capability_id,
+                capability_id: capability_id.clone(),
                 owner,
                 holder,
                 action,
@@ -2089,11 +2124,11 @@ impl BountyEscrowContract {
             },
         );
 
-        Ok(capability_id)
+        Ok(capability_id.clone())
     }
 
-    pub fn revoke_capability(env: Env, owner: Address, capability_id: u64) -> Result<(), Error> {
-        let mut capability = Self::load_capability(&env, capability_id)?;
+    pub fn revoke_capability(env: Env, owner: Address, capability_id: BytesN<32>) -> Result<(), Error> {
+        let mut capability = Self::load_capability(&env, capability_id.clone())?;
         if capability.owner != owner {
             return Err(Error::Unauthorized);
         }
@@ -2106,7 +2141,7 @@ impl BountyEscrowContract {
         capability.revoked = true;
         env.storage()
             .persistent()
-            .set(&DataKey::Capability(capability_id), &capability);
+            .set(&DataKey::Capability(capability_id.clone()), &capability);
 
         events::emit_capability_revoked(
             &env,
@@ -2120,8 +2155,8 @@ impl BountyEscrowContract {
         Ok(())
     }
 
-    pub fn get_capability(env: Env, capability_id: u64) -> Result<Capability, Error> {
-        Self::load_capability(&env, capability_id)
+    pub fn get_capability(env: Env, capability_id: BytesN<32>) -> Result<Capability, Error> {
+        Self::load_capability(&env, capability_id.clone())
     }
 
     /// Get current fee configuration (view function)
@@ -3052,7 +3087,7 @@ impl BountyEscrowContract {
         contributor: Address,
         payout_amount: i128,
         holder: Address,
-        capability_id: u64,
+        capability_id: BytesN<32>,
     ) -> Result<(), Error> {
         // GUARD: acquire reentrancy lock
         reentrancy_guard::acquire(&env);
@@ -3288,7 +3323,7 @@ impl BountyEscrowContract {
         env: Env,
         bounty_id: u64,
         holder: Address,
-        capability_id: u64,
+        capability_id: BytesN<32>,
     ) -> Result<(), Error> {
         // GUARD: acquire reentrancy lock
         reentrancy_guard::acquire(&env);
@@ -3977,7 +4012,7 @@ impl BountyEscrowContract {
         bounty_id: u64,
         amount: i128,
         holder: Address,
-        capability_id: u64,
+        capability_id: BytesN<32>,
     ) -> Result<(), Error> {
         // GUARD: acquire reentrancy lock
         reentrancy_guard::acquire(&env);

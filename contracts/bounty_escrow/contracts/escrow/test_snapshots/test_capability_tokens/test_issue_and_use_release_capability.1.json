@@ -174,7 +174,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "u64": 1
+                  "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
                 }
               ]
             }
@@ -432,7 +432,7 @@
                   "symbol": "Capability"
                 },
                 {
-                  "u64": 1
+                  "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
                 }
               ]
             },
@@ -452,7 +452,7 @@
                       "symbol": "Capability"
                     },
                     {
-                      "u64": 1
+                      "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
                     }
                   ]
                 },
@@ -857,18 +857,6 @@
                         },
                         "val": {
                           "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM"
-                        }
-                      },
-                      {
-                        "key": {
-                          "vec": [
-                            {
-                              "symbol": "CapabilityNonce"
-                            }
-                          ]
-                        },
-                        "val": {
-                          "u64": 1
                         }
                       },
                       {
@@ -2173,7 +2161,7 @@
                 "symbol": "cap_new"
               },
               {
-                "u64": 1
+                "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
               }
             ],
             "data": {
@@ -2214,7 +2202,7 @@
                     "symbol": "capability_id"
                   },
                   "val": {
-                    "u64": 1
+                    "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
                   }
                 },
                 {
@@ -2280,7 +2268,7 @@
               }
             ],
             "data": {
-              "u64": 1
+              "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
             }
           }
         }
@@ -2306,7 +2294,7 @@
               }
             ],
             "data": {
-              "u64": 1
+              "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
             }
           }
         }
@@ -2455,7 +2443,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "u64": 1
+                  "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
                 }
               ]
             }
@@ -2476,7 +2464,7 @@
                 "symbol": "cap_use"
               },
               {
-                "u64": 1
+                "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
               }
             ],
             "data": {
@@ -2517,7 +2505,7 @@
                     "symbol": "capability_id"
                   },
                   "val": {
-                    "u64": 1
+                    "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
                   }
                 },
                 {
@@ -2921,7 +2909,7 @@
               }
             ],
             "data": {
-              "u64": 1
+              "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
             }
           }
         }
@@ -3070,7 +3058,7 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                 },
                 {
-                  "u64": 1
+                  "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
                 }
               ]
             }
@@ -3172,7 +3160,7 @@
                       "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAITA4"
                     },
                     {
-                      "u64": 1
+                      "bytes": "5e07719c9be24e521d9e260e311fe7d205e521004a43a9777c58fc649b8e587c"
                     }
                   ]
                 }
