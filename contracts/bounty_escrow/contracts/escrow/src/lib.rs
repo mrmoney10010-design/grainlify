@@ -20,14 +20,20 @@ mod test_multi_region_treasury;
 mod test_rbac;
 #[cfg(test)]
 mod test_risk_flags;
+pub mod gas_budget;
 mod traits;
 pub mod upgrade_safety;
 
+#[cfg(test)]
+mod test_gas_budget;
 #[cfg(test)]
 mod test_maintenance_mode;
 
 #[cfg(test)]
 mod test_deterministic_error_ordering;
+
+#[cfg(test)]
+mod test_reentrancy_guard;
 
 use events::{
     emit_batch_funds_locked, emit_batch_funds_released, emit_bounty_initialized,
@@ -606,6 +612,11 @@ pub enum Error {
     InvalidSelectionInput = 42,
     /// Returned when an upgrade safety pre-check fails
     UpgradeSafetyCheckFailed = 43,
+    /// Returned when an operation's measured CPU or memory consumption exceeds
+    /// the configured cap and [`gas_budget::GasBudgetConfig::enforce`] is `true`.
+    /// The Soroban host reverts all storage writes and token transfers in the
+    /// transaction atomically. Only reachable in test / testutils builds.
+    GasBudgetExceeded = 44,
 }
 
 /// Bit flag: escrow or payout should be treated as elevated risk (indexers, UIs).
@@ -655,6 +666,8 @@ pub struct Escrow {
     pub status: EscrowStatus,
     pub deadline: u64,
     pub refund_history: Vec<RefundRecord>,
+    pub archived: bool,
+    pub archived_at: Option<u64>,
 }
 
 /// Mutually exclusive participant filtering mode for lock_funds / batch_lock_funds.
@@ -697,6 +710,8 @@ pub struct AnonymousEscrow {
     pub status: EscrowStatus,
     pub deadline: u64,
     pub refund_history: Vec<RefundRecord>,
+    pub archived: bool,
+    pub archived_at: Option<u64>,
 }
 
 /// Depositor identity: either a concrete address (non-anon) or a 32-byte commitment (anon).
@@ -764,6 +779,9 @@ pub enum DataKey {
     NetworkId,
 
     MaintenanceMode, // bool flag
+    /// Per-operation gas budget caps configured by the admin.
+    /// See [`gas_budget::GasBudgetConfig`].
+    GasBudgetConfig,
 }
 
 #[contracttype]
@@ -837,7 +855,10 @@ pub struct FeeConfig {
     pub lock_fee_rate: i128,
     /// Fee rate charged when funds are released, expressed in basis points.
     pub release_fee_rate: i128,
-    /// Default fallback recipient when multi-region routing is disabled.
+    /// Flat fee (token smallest units) added on each lock, before cap to deposit amount.
+    pub lock_fixed_fee: i128,
+    /// Flat fee added on each full release or partial payout, before cap to payout amount.
+    pub release_fixed_fee: i128,
     pub fee_recipient: Address,
     /// Whether fee collection is enabled.
     pub fee_enabled: bool,
@@ -864,6 +885,8 @@ pub struct TokenFeeConfig {
     pub lock_fee_rate: i128,
     /// Fee rate on release, in basis points.
     pub release_fee_rate: i128,
+    pub lock_fixed_fee: i128,
+    pub release_fixed_fee: i128,
     /// Address that receives fees collected for this token.
     pub fee_recipient: Address,
     /// Whether fee collection is active for this token.
@@ -1070,6 +1093,9 @@ impl BountyEscrowContract {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
         }
+        if admin == token {
+            return Err(Error::Unauthorized);
+        }
         env.storage().instance().set(&DataKey::Admin, &admin);
         env.storage().instance().set(&DataKey::Token, &token);
         env.storage().instance().set(&DataKey::Version, &1u32);
@@ -1161,10 +1187,34 @@ impl BountyEscrowContract {
         numerator / BASIS_POINTS
     }
 
+    /// Total fee on `amount`: ceiling percentage plus optional fixed, capped at `amount`.
+    fn combined_fee_amount(amount: i128, rate_bps: i128, fixed: i128, fee_enabled: bool) -> i128 {
+        if !fee_enabled || amount <= 0 {
+            return 0;
+        }
+        if fixed < 0 {
+            return 0;
+        }
+        let pct = Self::calculate_fee(amount, rate_bps);
+        let sum = pct.saturating_add(fixed);
+        sum.min(amount).max(0)
+    }
+
     /// Test-only shim exposing `calculate_fee` for unit-level assertions.
     #[cfg(test)]
     pub fn calculate_fee_pub(amount: i128, fee_rate: i128) -> i128 {
         Self::calculate_fee(amount, fee_rate)
+    }
+
+    /// Test-only: combined percentage + fixed fee (capped).
+    #[cfg(test)]
+    pub fn combined_fee_pub(
+        amount: i128,
+        rate_bps: i128,
+        fixed: i128,
+        fee_enabled: bool,
+    ) -> i128 {
+        Self::combined_fee_amount(amount, rate_bps, fixed, fee_enabled)
     }
 
     /// Get fee configuration (internal helper)
@@ -1175,6 +1225,8 @@ impl BountyEscrowContract {
             .unwrap_or_else(|| FeeConfig {
                 lock_fee_rate: 0,
                 release_fee_rate: 0,
+                lock_fixed_fee: 0,
+                release_fixed_fee: 0,
                 fee_recipient: env.storage().instance().get(&DataKey::Admin).unwrap(),
                 fee_enabled: false,
                 treasury_destinations: Vec::new(env),
@@ -1318,6 +1370,8 @@ impl BountyEscrowContract {
         env: Env,
         lock_fee_rate: Option<i128>,
         release_fee_rate: Option<i128>,
+        lock_fixed_fee: Option<i128>,
+        release_fixed_fee: Option<i128>,
         fee_recipient: Option<Address>,
         fee_enabled: Option<bool>,
     ) -> Result<(), Error> {
@@ -1344,6 +1398,20 @@ impl BountyEscrowContract {
             fee_config.release_fee_rate = rate;
         }
 
+        if let Some(fixed) = lock_fixed_fee {
+            if fixed < 0 {
+                return Err(Error::InvalidAmount);
+            }
+            fee_config.lock_fixed_fee = fixed;
+        }
+
+        if let Some(fixed) = release_fixed_fee {
+            if fixed < 0 {
+                return Err(Error::InvalidAmount);
+            }
+            fee_config.release_fixed_fee = fixed;
+        }
+
         if let Some(recipient) = fee_recipient {
             fee_config.fee_recipient = recipient;
         }
@@ -1361,6 +1429,8 @@ impl BountyEscrowContract {
             events::FeeConfigUpdated {
                 lock_fee_rate: fee_config.lock_fee_rate,
                 release_fee_rate: fee_config.release_fee_rate,
+                lock_fixed_fee: fee_config.lock_fixed_fee,
+                release_fixed_fee: fee_config.release_fixed_fee,
                 fee_recipient: fee_config.fee_recipient.clone(),
                 fee_enabled: fee_config.fee_enabled,
                 timestamp: env.ledger().timestamp(),
@@ -1511,6 +1581,9 @@ impl BountyEscrowContract {
     /// Returns `Error::NotPaused` if `lock_paused` is false.
     /// Returns `Error::Unauthorized` if the caller is not the admin.
     pub fn emergency_withdraw(env: Env, target: Address) -> Result<(), Error> {
+        // GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
+
         let admin: Address = env
             .storage()
             .instance()
@@ -1542,61 +1615,8 @@ impl BountyEscrowContract {
             );
         }
 
-        // Clear all escrow-related storage so the contract can be safely reused.
-        let index: Vec<u64> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::EscrowIndex)
-            .unwrap_or(Vec::new(&env));
-        let mut seen_depositors: Vec<Address> = Vec::new(&env);
-        for bounty_id in index.iter() {
-            if let Some(escrow) = env
-                .storage()
-                .persistent()
-                .get::<DataKey, Escrow>(&DataKey::Escrow(bounty_id))
-            {
-                let mut known = false;
-                for depositor in seen_depositors.iter() {
-                    if depositor.clone() == escrow.depositor {
-                        known = true;
-                        break;
-                    }
-                }
-                if !known {
-                    seen_depositors.push_back(escrow.depositor.clone());
-                }
-            }
-
-            env.storage()
-                .persistent()
-                .remove(&DataKey::Escrow(bounty_id));
-            env.storage()
-                .persistent()
-                .remove(&DataKey::Metadata(bounty_id));
-            env.storage()
-                .persistent()
-                .remove(&DataKey::RefundApproval(bounty_id));
-            env.storage()
-                .persistent()
-                .remove(&DataKey::ReleaseApproval(bounty_id));
-            env.storage()
-                .persistent()
-                .remove(&DataKey::PendingClaim(bounty_id));
-            env.storage()
-                .persistent()
-                .remove(&DataKey::NonTransferableRewards(bounty_id));
-        }
-
-        for depositor in seen_depositors.iter() {
-            env.storage()
-                .persistent()
-                .remove(&DataKey::DepositorIndex(depositor.clone()));
-        }
-
-        env.storage()
-            .persistent()
-            .set(&DataKey::EscrowIndex, &Vec::<u64>::new(&env));
-
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
         Ok(())
     }
 
@@ -2105,6 +2125,7 @@ impl BountyEscrowContract {
     /// * `token`            – the token contract address this config applies to
     /// * `lock_fee_rate`    – fee rate on lock in basis points (0 – 5 000)
     /// * `release_fee_rate` – fee rate on release in basis points (0 – 5 000)
+    /// * `lock_fixed_fee` / `release_fixed_fee` – flat fees in token units (≥ 0)
     /// * `fee_recipient`    – address that receives fees for this token
     /// * `fee_enabled`      – whether fee collection is active
     ///
@@ -2116,6 +2137,8 @@ impl BountyEscrowContract {
         token: Address,
         lock_fee_rate: i128,
         release_fee_rate: i128,
+        lock_fixed_fee: i128,
+        release_fixed_fee: i128,
         fee_recipient: Address,
         fee_enabled: bool,
     ) -> Result<(), Error> {
@@ -2131,10 +2154,15 @@ impl BountyEscrowContract {
         if !(0..=MAX_FEE_RATE).contains(&release_fee_rate) {
             return Err(Error::InvalidFeeRate);
         }
+        if lock_fixed_fee < 0 || release_fixed_fee < 0 {
+            return Err(Error::InvalidAmount);
+        }
 
         let config = TokenFeeConfig {
             lock_fee_rate,
             release_fee_rate,
+            lock_fixed_fee,
+            release_fixed_fee,
             fee_recipient,
             fee_enabled,
         };
@@ -2159,24 +2187,31 @@ impl BountyEscrowContract {
     /// Internal: resolve the effective fee config for the escrow token.
     ///
     /// Precedence: `TokenFeeConfig(token)` > global `FeeConfig`.
-    fn resolve_fee_config(env: &Env) -> FeeConfig {
+    fn resolve_fee_config(env: &Env) -> (i128, i128, i128, i128, Address, bool) {
         let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
         if let Some(tok_cfg) = env
             .storage()
             .instance()
             .get::<DataKey, TokenFeeConfig>(&DataKey::TokenFeeConfig(token_addr))
         {
-            let global = Self::get_fee_config_internal(env);
-            FeeConfig {
-                lock_fee_rate: tok_cfg.lock_fee_rate,
-                release_fee_rate: tok_cfg.release_fee_rate,
-                fee_recipient: tok_cfg.fee_recipient,
-                fee_enabled: tok_cfg.fee_enabled,
-                treasury_destinations: global.treasury_destinations,
-                distribution_enabled: global.distribution_enabled,
-            }
+            (
+                tok_cfg.lock_fee_rate,
+                tok_cfg.release_fee_rate,
+                tok_cfg.lock_fixed_fee,
+                tok_cfg.release_fixed_fee,
+                tok_cfg.fee_recipient,
+                tok_cfg.fee_enabled,
+            )
         } else {
-            Self::get_fee_config_internal(env)
+            let global = Self::get_fee_config_internal(env);
+            (
+                global.lock_fee_rate,
+                global.release_fee_rate,
+                global.lock_fixed_fee,
+                global.release_fixed_fee,
+                global.fee_recipient,
+                global.fee_enabled,
+            )
         }
     }
 
@@ -2319,6 +2354,9 @@ impl BountyEscrowContract {
 
         // 1. GUARD: acquire reentrancy lock
         reentrancy_guard::acquire(&env);
+        // Snapshot resource meters for gas cap enforcement (test / testutils only).
+        #[cfg(any(test, feature = "testutils"))]
+        let gas_snapshot = gas_budget::capture(&env);
 
         // 2. Contract must be initialized before any other check
         if !env.storage().instance().has(&DataKey::Admin) {
@@ -2385,16 +2423,16 @@ impl BountyEscrowContract {
         soroban_sdk::log!(&env, "transfer ok");
 
         // Resolve effective fee config (per-token takes precedence over global).
-        let fee_config = Self::resolve_fee_config(&env);
+        let (lock_fee_rate, _release_fee_rate, lock_fixed_fee, _release_fixed, fee_recipient, fee_enabled) =
+            Self::resolve_fee_config(&env);
 
-        // Deduct lock fee from the escrowed principal.
-        // Ceiling division ensures fee >= 1 stroop whenever rate > 0,
-        // preventing principal drain via dust-amount splitting.
-        let fee_amount = if fee_config.fee_enabled && fee_config.lock_fee_rate > 0 {
-            Self::calculate_fee(amount, fee_config.lock_fee_rate)
-        } else {
-            0
-        };
+        // Deduct lock fee from the escrowed principal (percentage + fixed, capped at deposit).
+        let fee_amount = Self::combined_fee_amount(
+            amount,
+            lock_fee_rate,
+            lock_fixed_fee,
+            fee_enabled,
+        );
 
         // Net amount stored in escrow after fee.
         // Fee must never exceed the deposit; guard against misconfiguration.
@@ -2408,12 +2446,15 @@ impl BountyEscrowContract {
         if fee_amount > 0 {
             Self::route_fee(
                 &env,
-                &client,
-                &fee_config,
-                fee_amount,
-                fee_config.lock_fee_rate,
-                events::FeeOperationType::Lock,
-            )?;
+                events::FeeCollected {
+                    operation_type: events::FeeOperationType::Lock,
+                    amount: fee_amount,
+                    fee_rate: lock_fee_rate,
+                    fee_fixed: lock_fixed_fee,
+                    recipient: fee_recipient,
+                    timestamp: env.ledger().timestamp(),
+                },
+            );
         }
         soroban_sdk::log!(&env, "fee ok");
 
@@ -2424,6 +2465,8 @@ impl BountyEscrowContract {
             deadline,
             refund_history: vec![&env],
             remaining_amount: net_amount,
+            archived: false,
+            archived_at: None,
         };
         invariants::assert_escrow(&env, &escrow);
 
@@ -2469,6 +2512,22 @@ impl BountyEscrowContract {
         // INV-2: Verify aggregate balance matches token balance after lock
         multitoken_invariants::assert_after_lock(&env);
 
+        // Gas budget cap enforcement (test / testutils only; see `gas_budget` module docs).
+        #[cfg(any(test, feature = "testutils"))]
+        {
+            let gas_cfg = gas_budget::get_config(&env);
+            if let Err(e) = gas_budget::check(
+                &env,
+                symbol_short!("lock"),
+                &gas_cfg.lock,
+                &gas_snapshot,
+                gas_cfg.enforce,
+            ) {
+                reentrancy_guard::release(&env);
+                return Err(e);
+            }
+        }
+
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
         Ok(())
@@ -2488,6 +2547,71 @@ impl BountyEscrowContract {
     /// # Security
     /// This function performs only read operations. No storage writes, token transfers,
     /// or events are emitted.
+    pub fn archive_escrow(env: Env, bounty_id: u64) -> Result<(), Error> {
+        let admin = Self::require_admin(&env)?;
+        admin.require_auth();
+
+        let mut escrow = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Escrow>(&DataKey::Escrow(bounty_id))
+            .ok_or(Error::EscrowNotFound)?;
+
+        escrow.archived = true;
+        escrow.archived_at = Some(env.ledger().timestamp());
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Escrow(bounty_id), &escrow);
+
+        // Also check anon escrow
+        if let Some(mut anon) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, AnonymousEscrow>(&DataKey::EscrowAnon(bounty_id))
+        {
+            anon.archived = true;
+            anon.archived_at = Some(env.ledger().timestamp());
+            env.storage()
+                .persistent()
+                .set(&DataKey::EscrowAnon(bounty_id), &anon);
+        }
+
+        events::emit_archived(&env, bounty_id, env.ledger().timestamp());
+        Ok(())
+    }
+
+    /// Get all archived escrow IDs.
+    pub fn get_archived_escrows(env: Env) -> Vec<u64> {
+        let index: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::EscrowIndex)
+            .unwrap_or(Vec::new(&env));
+        let mut archived = Vec::new(&env);
+        for id in index.iter() {
+            if let Some(escrow) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, Escrow>(&DataKey::Escrow(id))
+            {
+                if escrow.archived {
+                    archived.push_back(id);
+                }
+            } else if let Some(anon) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, AnonymousEscrow>(&DataKey::EscrowAnon(id))
+            {
+                if anon.archived {
+                    archived.push_back(id);
+                }
+            }
+        }
+        archived
+    }
+
+    /// Simulation of a lock operation.
     pub fn dry_run_lock(
         env: Env,
         depositor: Address,
@@ -2565,12 +2689,10 @@ impl BountyEscrowContract {
             return Err(Error::InsufficientFunds);
         }
         // 8. Fee computation (pure)
-        let fee_config = Self::resolve_fee_config(env);
-        let fee_amount = if fee_config.fee_enabled && fee_config.lock_fee_rate > 0 {
-            Self::calculate_fee(amount, fee_config.lock_fee_rate)
-        } else {
-            0
-        };
+        let (lock_fee_rate, _release_fee_rate, lock_fixed_fee, _release_fixed, _fee_recipient, fee_enabled) =
+            Self::resolve_fee_config(env);
+        let fee_amount =
+            Self::combined_fee_amount(amount, lock_fee_rate, lock_fixed_fee, fee_enabled);
         let net_amount = amount.checked_sub(fee_amount).unwrap_or(amount);
         if net_amount <= 0 {
             return Err(Error::InvalidAmount);
@@ -2664,6 +2786,8 @@ impl BountyEscrowContract {
             status: EscrowStatus::Locked,
             deadline,
             refund_history: vec![&env],
+            archived: false,
+            archived_at: None,
         };
 
         env.storage()
@@ -2721,27 +2845,18 @@ impl BountyEscrowContract {
         // 4. Authorization
         // 5. Business logic (bounty exists, funds locked)
 
-        // 1. Reentrancy guard (manual inline guard used here for release_funds)
-        if env.storage().instance().has(&DataKey::ReentrancyGuard) {
-            panic!("Reentrancy detected");
-        }
-        env.storage()
-            .instance()
-            .set(&DataKey::ReentrancyGuard, &true);
+        // 1. GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
 
         // 2. Contract must be initialized
         if !env.storage().instance().has(&DataKey::Admin) {
-            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::NotInitialized);
         }
 
         // 3. Operational state: paused
         if Self::check_paused(&env, symbol_short!("release")) {
-            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::FundsPaused);
         }
-
-        let _start = env.ledger().timestamp();
 
         // 4. Authorization
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
@@ -2749,7 +2864,6 @@ impl BountyEscrowContract {
 
         // 5. Business logic: bounty must exist and be locked
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
-            env.storage().instance().remove(&DataKey::ReentrancyGuard);
             return Err(Error::BountyNotFound);
         }
 
@@ -2763,17 +2877,16 @@ impl BountyEscrowContract {
             return Err(Error::FundsNotLocked);
         }
 
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let client = token::Client::new(&env, &token_addr);
-
         // Resolve effective fee config for release.
-        let fee_config = Self::resolve_fee_config(&env);
+        let (_lock_fee_rate, release_fee_rate, _lock_fixed, release_fixed_fee, fee_recipient, fee_enabled) =
+            Self::resolve_fee_config(&env);
 
-        let release_fee = if fee_config.fee_enabled && fee_config.release_fee_rate > 0 {
-            Self::calculate_fee(escrow.amount, fee_config.release_fee_rate)
-        } else {
-            0
-        };
+        let release_fee = Self::combined_fee_amount(
+            escrow.amount,
+            release_fee_rate,
+            release_fixed_fee,
+            fee_enabled,
+        );
 
         // Net payout to contributor after release fee.
         let net_payout = escrow
@@ -2784,26 +2897,33 @@ impl BountyEscrowContract {
             return Err(Error::InvalidAmount);
         }
 
-        if release_fee > 0 {
-            Self::route_fee(
-                &env,
-                &client,
-                &fee_config,
-                release_fee,
-                fee_config.release_fee_rate,
-                events::FeeOperationType::Release,
-            )?;
-        }
-
-        // Transfer net amount to contributor
-        client.transfer(&env.current_contract_address(), &contributor, &net_payout);
-
+        // EFFECTS: update state before external calls (CEI)
         escrow.status = EscrowStatus::Released;
         escrow.remaining_amount = 0;
         invariants::assert_escrow(&env, &escrow);
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+
+        // INTERACTION: external token transfers are last
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token_addr);
+
+        if release_fee > 0 {
+            Self::route_fee(
+                &env,
+                events::FeeCollected {
+                    operation_type: events::FeeOperationType::Release,
+                    amount: release_fee,
+                    fee_rate: release_fee_rate,
+                    fee_fixed: release_fixed_fee,
+                    recipient: fee_recipient,
+                    timestamp: env.ledger().timestamp(),
+                },
+            );
+        }
+
+        client.transfer(&env.current_contract_address(), &contributor, &net_payout);
 
         emit_funds_released(
             &env,
@@ -2816,9 +2936,8 @@ impl BountyEscrowContract {
             },
         );
 
-        // Clear reentrancy guard
-        env.storage().instance().remove(&DataKey::ReentrancyGuard);
-
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
         Ok(())
     }
 
@@ -2878,12 +2997,14 @@ impl BountyEscrowContract {
         if escrow.status != EscrowStatus::Locked {
             return Err(Error::FundsNotLocked);
         }
-        let fee_config = Self::resolve_fee_config(env);
-        let release_fee = if fee_config.fee_enabled && fee_config.release_fee_rate > 0 {
-            Self::calculate_fee(escrow.amount, fee_config.release_fee_rate)
-        } else {
-            0
-        };
+        let (_lock_fee_rate, release_fee_rate, _lock_fixed, release_fixed_fee, _fee_recipient, fee_enabled) =
+            Self::resolve_fee_config(env);
+        let release_fee = Self::combined_fee_amount(
+            escrow.amount,
+            release_fee_rate,
+            release_fixed_fee,
+            fee_enabled,
+        );
         let net_payout = escrow
             .amount
             .checked_sub(release_fee)
@@ -2904,6 +3025,9 @@ impl BountyEscrowContract {
         holder: Address,
         capability_id: u64,
     ) -> Result<(), Error> {
+        // GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
+
         if Self::check_paused(&env, symbol_short!("release")) {
             return Err(Error::FundsPaused);
         }
@@ -2935,14 +3059,7 @@ impl BountyEscrowContract {
             payout_amount,
         )?;
 
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let client = token::Client::new(&env, &token_addr);
-        client.transfer(
-            &env.current_contract_address(),
-            &contributor,
-            &payout_amount,
-        );
-
+        // EFFECTS: update state before external call (CEI)
         escrow.remaining_amount -= payout_amount;
         if escrow.remaining_amount == 0 {
             escrow.status = EscrowStatus::Released;
@@ -2950,6 +3067,15 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
+
+        // INTERACTION: external token transfer is last
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token_addr);
+        client.transfer(
+            &env.current_contract_address(),
+            &contributor,
+            &payout_amount,
+        );
 
         emit_funds_released(
             &env,
@@ -2962,6 +3088,8 @@ impl BountyEscrowContract {
             },
         );
 
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
         Ok(())
     }
 
@@ -3042,6 +3170,9 @@ impl BountyEscrowContract {
 
     /// Beneficiary calls this to claim their authorized funds within the window.
     pub fn claim(env: Env, bounty_id: u64) -> Result<(), Error> {
+        // GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
+
         if Self::check_paused(&env, symbol_short!("release")) {
             return Err(Error::FundsPaused);
         }
@@ -3068,21 +3199,14 @@ impl BountyEscrowContract {
             return Err(Error::FundsNotLocked);
         }
 
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let client = token::Client::new(&env, &token_addr);
-        client.transfer(
-            &env.current_contract_address(),
-            &claim.recipient,
-            &claim.amount,
-        );
-
-        // Update escrow status
+        // EFFECTS: update state before external call (CEI)
         let mut escrow: Escrow = env
             .storage()
             .persistent()
             .get(&DataKey::Escrow(bounty_id))
             .unwrap();
         escrow.status = EscrowStatus::Released;
+        escrow.remaining_amount = 0;
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -3091,6 +3215,15 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::PendingClaim(bounty_id), &claim);
+
+        // INTERACTION: external token transfer is last
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token_addr);
+        client.transfer(
+            &env.current_contract_address(),
+            &claim.recipient,
+            &claim.amount,
+        );
 
         env.events().publish(
             (symbol_short!("claim"), symbol_short!("done")),
@@ -3101,6 +3234,9 @@ impl BountyEscrowContract {
                 claimed_at: now,
             },
         );
+
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
         Ok(())
     }
 
@@ -3112,6 +3248,9 @@ impl BountyEscrowContract {
         holder: Address,
         capability_id: u64,
     ) -> Result<(), Error> {
+        // GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
+
         if Self::check_paused(&env, symbol_short!("release")) {
             return Err(Error::FundsPaused);
         }
@@ -3146,20 +3285,14 @@ impl BountyEscrowContract {
             claim.amount,
         )?;
 
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let client = token::Client::new(&env, &token_addr);
-        client.transfer(
-            &env.current_contract_address(),
-            &claim.recipient,
-            &claim.amount,
-        );
-
+        // EFFECTS: update state before external call (CEI)
         let mut escrow: Escrow = env
             .storage()
             .persistent()
             .get(&DataKey::Escrow(bounty_id))
             .unwrap();
         escrow.status = EscrowStatus::Released;
+        escrow.remaining_amount = 0;
         env.storage()
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
@@ -3168,6 +3301,15 @@ impl BountyEscrowContract {
         env.storage()
             .persistent()
             .set(&DataKey::PendingClaim(bounty_id), &claim);
+
+        // INTERACTION: external token transfer is last
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token_addr);
+        client.transfer(
+            &env.current_contract_address(),
+            &claim.recipient,
+            &claim.amount,
+        );
 
         env.events().publish(
             (symbol_short!("claim"), symbol_short!("done")),
@@ -3178,6 +3320,9 @@ impl BountyEscrowContract {
                 claimed_at: now,
             },
         );
+
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
         Ok(())
     }
 
@@ -3299,12 +3444,18 @@ impl BountyEscrowContract {
         contributor: Address,
         payout_amount: i128,
     ) -> Result<(), Error> {
+        // GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
+
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
+        // Snapshot resource meters for gas cap enforcement (test / testutils only).
+        #[cfg(any(test, feature = "testutils"))]
+        let gas_snapshot = gas_budget::capture(&env);
 
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
             return Err(Error::BountyNotFound);
@@ -3330,16 +3481,7 @@ impl BountyEscrowContract {
             return Err(Error::InsufficientFunds);
         }
 
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let client = token::Client::new(&env, &token_addr);
-
-        // Transfer only the requested partial amount to the contributor
-        client.transfer(
-            &env.current_contract_address(),
-            &contributor,
-            &payout_amount,
-        );
-
+        // EFFECTS: update state before external call (CEI)
         // Decrement remaining; this is always an exact integer subtraction — no rounding
         escrow.remaining_amount = escrow.remaining_amount.checked_sub(payout_amount).unwrap();
 
@@ -3352,17 +3494,28 @@ impl BountyEscrowContract {
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
 
+        // INTERACTION: external token transfer is last
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token_addr);
+        client.transfer(
+            &env.current_contract_address(),
+            &contributor,
+            &payout_amount,
+        );
+
         events::emit_funds_released(
             &env,
             FundsReleased {
                 version: EVENT_VERSION_V2,
                 bounty_id,
-                amount: payout_amount,
+                amount: net_to_contributor,
                 recipient: contributor,
                 timestamp: env.ledger().timestamp(),
             },
         );
 
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
         Ok(())
     }
 
@@ -3380,21 +3533,15 @@ impl BountyEscrowContract {
     /// # Errors
     /// Returns `Error::NotInitialized` if admin is not set.
     pub fn refund(env: Env, bounty_id: u64) -> Result<(), Error> {
-        let caller = env
-            .storage()
-            .persistent()
-            .get::<DataKey, Escrow>(&DataKey::Escrow(bounty_id))
-            .map(|escrow| escrow.depositor)
-            .unwrap_or_else(|| env.current_contract_address());
-        let res = Self::refund_logic(env.clone(), bounty_id);
-        monitoring::track_operation(&env, symbol_short!("refund"), caller, res.is_ok());
-        res
-    }
+        // GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
 
-    fn refund_logic(env: Env, bounty_id: u64) -> Result<(), Error> {
         if Self::check_paused(&env, symbol_short!("refund")) {
             return Err(Error::FundsPaused);
         }
+        // Snapshot resource meters for gas cap enforcement (test / testutils only).
+        #[cfg(any(test, feature = "testutils"))]
+        let gas_snapshot = gas_budget::capture(&env);
 
         if !env.storage().persistent().has(&DataKey::Escrow(bounty_id)) {
             return Err(Error::BountyNotFound);
@@ -3516,6 +3663,22 @@ impl BountyEscrowContract {
 
         // INV-2: Verify aggregate balance matches token balance after refund
         multitoken_invariants::assert_after_disbursement(&env);
+
+        // Gas budget cap enforcement (test / testutils only).
+        #[cfg(any(test, feature = "testutils"))]
+        {
+            let gas_cfg = gas_budget::get_config(&env);
+            if let Err(e) = gas_budget::check(
+                &env,
+                symbol_short!("refund"),
+                &gas_cfg.refund,
+                &gas_snapshot,
+                gas_cfg.enforce,
+            ) {
+                reentrancy_guard::release(&env);
+                return Err(e);
+            }
+        }
 
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
@@ -3753,6 +3916,9 @@ impl BountyEscrowContract {
                 timestamp: now,
             },
         );
+
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
         Ok(())
     }
 
@@ -3765,6 +3931,9 @@ impl BountyEscrowContract {
         holder: Address,
         capability_id: u64,
     ) -> Result<(), Error> {
+        // GUARD: acquire reentrancy lock
+        reentrancy_guard::acquire(&env);
+
         if Self::check_paused(&env, symbol_short!("refund")) {
             return Err(Error::FundsPaused);
         }
@@ -3813,12 +3982,9 @@ impl BountyEscrowContract {
             amount,
         )?;
 
-        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
-        let client = token::Client::new(&env, &token_addr);
+        // EFFECTS: update state before external call (CEI)
         let now = env.ledger().timestamp();
         let refund_to = escrow.depositor.clone();
-
-        client.transfer(&env.current_contract_address(), &refund_to, &amount);
 
         escrow.remaining_amount -= amount;
         if escrow.remaining_amount == 0 {
@@ -3842,6 +4008,11 @@ impl BountyEscrowContract {
             .persistent()
             .set(&DataKey::Escrow(bounty_id), &escrow);
 
+        // INTERACTION: external token transfer is last
+        let token_addr: Address = env.storage().instance().get(&DataKey::Token).unwrap();
+        let client = token::Client::new(&env, &token_addr);
+        client.transfer(&env.current_contract_address(), &refund_to, &amount);
+
         emit_funds_refunded(
             &env,
             FundsRefunded {
@@ -3853,6 +4024,8 @@ impl BountyEscrowContract {
             },
         );
 
+        // GUARD: release reentrancy lock
+        reentrancy_guard::release(&env);
         Ok(())
     }
 
@@ -4356,6 +4529,65 @@ impl BountyEscrowContract {
         ))
     }
 
+    /// Configure per-operation gas budget caps (admin only).
+    ///
+    /// Sets the maximum allowed CPU instructions and memory bytes for each
+    /// operation class. A value of `0` in either field means uncapped for that
+    /// dimension.
+    ///
+    /// When `enforce` is `true`, any operation that exceeds its cap returns
+    /// `Error::GasBudgetExceeded` and the transaction reverts atomically.
+    /// When `false`, caps are advisory: a `GasBudgetCapExceeded` event is
+    /// emitted but execution continues.
+    ///
+    /// # Platform note
+    /// Gas measurement uses Soroban's `env.budget()` API, which is available
+    /// only in the `testutils` feature. In production contracts, the
+    /// configuration is stored and readable via [`get_gas_budget`], but
+    /// runtime enforcement applies only when running under the test
+    /// environment. See `GAS_TESTS.md` and the `gas_budget` module docs for
+    /// guidance on choosing conservative cap values.
+    ///
+    /// # Errors
+    /// * `Error::NotInitialized` — `init` has not been called.
+    /// * `Error::Unauthorized` — caller is not the registered admin.
+    pub fn set_gas_budget(
+        env: Env,
+        lock: gas_budget::OperationBudget,
+        release: gas_budget::OperationBudget,
+        refund: gas_budget::OperationBudget,
+        partial_release: gas_budget::OperationBudget,
+        batch_lock: gas_budget::OperationBudget,
+        batch_release: gas_budget::OperationBudget,
+        enforce: bool,
+    ) -> Result<(), Error> {
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+
+        let config = gas_budget::GasBudgetConfig {
+            lock,
+            release,
+            refund,
+            partial_release,
+            batch_lock,
+            batch_release,
+            enforce,
+        };
+        gas_budget::set_config(&env, config);
+        Ok(())
+    }
+
+    /// Return the current per-operation gas budget configuration.
+    ///
+    /// Returns the fully uncapped default if no configuration has been set.
+    pub fn get_gas_budget(env: Env) -> gas_budget::GasBudgetConfig {
+        gas_budget::get_config(&env)
+    }
+
     /// Batch lock funds for multiple bounties in a single atomic transaction.
     ///
     /// Locks between 1 and [`MAX_BATCH_SIZE`] bounties in one call, reducing
@@ -4414,6 +4646,9 @@ impl BountyEscrowContract {
 
         // GUARD: acquire reentrancy lock
         reentrancy_guard::acquire(&env);
+        // Snapshot resource meters for gas cap enforcement (test / testutils only).
+        #[cfg(any(test, feature = "testutils"))]
+        let gas_snapshot = gas_budget::capture(&env);
         let result: Result<u32, Error> = (|| {
             if Self::get_deprecation_state(&env).deprecated {
                 return Err(Error::ContractDeprecated);
@@ -4497,6 +4732,8 @@ impl BountyEscrowContract {
                     deadline: item.deadline,
                     refund_history: vec![&env],
                     remaining_amount: item.amount,
+                    archived: false,
+                    archived_at: None,
                 };
 
                 env.storage()
@@ -4555,12 +4792,14 @@ impl BountyEscrowContract {
                 },
             );
 
-            Ok(locked_count)
-        })();
-
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
-        result
+        Ok(locked_count)
+    }
+
+    /// Alias for batch_lock_funds to match the requested naming convention.
+    pub fn batch_lock(env: Env, items: Vec<LockFundsItem>) -> Result<u32, Error> {
+        Self::batch_lock_funds(env, items)
     }
 
     /// Batch release funds to multiple contributors in a single atomic transaction.
@@ -4618,6 +4857,9 @@ impl BountyEscrowContract {
         }
         // GUARD: acquire reentrancy lock
         reentrancy_guard::acquire(&env);
+        // Snapshot resource meters for gas cap enforcement (test / testutils only).
+        #[cfg(any(test, feature = "testutils"))]
+        let gas_snapshot = gas_budget::capture(&env);
         let result: Result<u32, Error> = (|| {
             // Validate batch size
             let batch_size = items.len();
@@ -4733,9 +4975,30 @@ impl BountyEscrowContract {
             Ok(released_count)
         })();
 
+        // Gas budget cap enforcement (test / testutils only).
+        #[cfg(any(test, feature = "testutils"))]
+        if result.is_ok() {
+            let gas_cfg = gas_budget::get_config(&env);
+            if let Err(e) = gas_budget::check(
+                &env,
+                symbol_short!("b_rel"),
+                &gas_cfg.batch_release,
+                &gas_snapshot,
+                gas_cfg.enforce,
+            ) {
+                reentrancy_guard::release(&env);
+                return Err(e);
+            }
+        }
+
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
         result
+    }
+
+    /// Alias for batch_release_funds to match the requested naming convention.
+    pub fn batch_release(env: Env, items: Vec<ReleaseFundsItem>) -> Result<u32, Error> {
+        Self::batch_release_funds(env, items)
     }
     /// Update stored metadata for a bounty.
     ///
@@ -5286,12 +5549,16 @@ impl traits::EscrowInterface for BountyEscrowContract {
         amount: i128,
         deadline: u64,
     ) -> Result<(), crate::Error> {
-        BountyEscrowContract::lock_funds(env.clone(), depositor, bounty_id, amount, deadline)
+        let entrypoint: fn(Env, Address, u64, i128, u64) -> Result<(), crate::Error> =
+            BountyEscrowContract::lock_funds;
+        entrypoint(env.clone(), depositor, bounty_id, amount, deadline)
     }
 
     /// Release funds to contributor through the trait interface
     fn release_funds(env: &Env, bounty_id: u64, contributor: Address) -> Result<(), crate::Error> {
-        BountyEscrowContract::release_funds(env.clone(), bounty_id, contributor)
+        let entrypoint: fn(Env, u64, Address) -> Result<(), crate::Error> =
+            BountyEscrowContract::release_funds;
+        entrypoint(env.clone(), bounty_id, contributor)
     }
 
     /// Partial release through the trait interface
@@ -5301,44 +5568,57 @@ impl traits::EscrowInterface for BountyEscrowContract {
         contributor: Address,
         payout_amount: i128,
     ) -> Result<(), crate::Error> {
-        BountyEscrowContract::partial_release(env.clone(), bounty_id, contributor, payout_amount)
+        let entrypoint: fn(Env, u64, Address, i128) -> Result<(), crate::Error> =
+            BountyEscrowContract::partial_release;
+        entrypoint(env.clone(), bounty_id, contributor, payout_amount)
     }
 
     /// Batch lock funds through the trait interface
     fn batch_lock_funds(env: &Env, items: Vec<LockFundsItem>) -> Result<u32, crate::Error> {
-        BountyEscrowContract::batch_lock_funds(env.clone(), items)
+        let entrypoint: fn(Env, Vec<LockFundsItem>) -> Result<u32, crate::Error> =
+            BountyEscrowContract::batch_lock_funds;
+        entrypoint(env.clone(), items)
     }
 
     /// Batch release funds through the trait interface
     fn batch_release_funds(env: &Env, items: Vec<ReleaseFundsItem>) -> Result<u32, crate::Error> {
-        BountyEscrowContract::batch_release_funds(env.clone(), items)
+        let entrypoint: fn(Env, Vec<ReleaseFundsItem>) -> Result<u32, crate::Error> =
+            BountyEscrowContract::batch_release_funds;
+        entrypoint(env.clone(), items)
     }
 
     /// Refund funds to depositor through the trait interface
     fn refund(env: &Env, bounty_id: u64) -> Result<(), crate::Error> {
-        BountyEscrowContract::refund(env.clone(), bounty_id)
+        let entrypoint: fn(Env, u64) -> Result<(), crate::Error> = BountyEscrowContract::refund;
+        entrypoint(env.clone(), bounty_id)
     }
 
     /// Get escrow information through the trait interface
     fn get_escrow_info(env: &Env, bounty_id: u64) -> Result<crate::Escrow, crate::Error> {
-        BountyEscrowContract::get_escrow_info(env.clone(), bounty_id)
+        let entrypoint: fn(Env, u64) -> Result<crate::Escrow, crate::Error> =
+            BountyEscrowContract::get_escrow_info;
+        entrypoint(env.clone(), bounty_id)
     }
 
     /// Get contract balance through the trait interface
     fn get_balance(env: &Env) -> Result<i128, crate::Error> {
-        BountyEscrowContract::get_balance(env.clone())
+        let entrypoint: fn(Env) -> Result<i128, crate::Error> = BountyEscrowContract::get_balance;
+        entrypoint(env.clone())
     }
 }
 
 impl traits::UpgradeInterface for BountyEscrowContract {
     /// Get contract version
     fn get_version(env: &Env) -> u32 {
-        BountyEscrowContract::get_version(env.clone())
+        let entrypoint: fn(Env) -> u32 = BountyEscrowContract::get_version;
+        entrypoint(env.clone())
     }
 
     /// Set contract version (admin only)
     fn set_version(env: &Env, new_version: u32) -> Result<(), crate::Error> {
-        BountyEscrowContract::set_version(env.clone(), new_version)
+        let entrypoint: fn(Env, u32) -> Result<(), crate::Error> =
+            BountyEscrowContract::set_version;
+        entrypoint(env.clone(), new_version)
     }
 }
 
@@ -5350,7 +5630,14 @@ impl traits::PauseInterface for BountyEscrowContract {
         refund: Option<bool>,
         reason: Option<soroban_sdk::String>,
     ) -> Result<(), crate::Error> {
-        BountyEscrowContract::set_paused(env.clone(), lock, release, refund, reason)
+        let entrypoint: fn(
+            Env,
+            Option<bool>,
+            Option<bool>,
+            Option<bool>,
+            Option<soroban_sdk::String>,
+        ) -> Result<(), crate::Error> = BountyEscrowContract::set_paused;
+        entrypoint(env.clone(), lock, release, refund, reason)
     }
 
     fn get_pause_flags(env: &Env) -> crate::PauseFlags {
@@ -5367,7 +5654,7 @@ impl traits::PauseInterface for BountyEscrowContract {
     }
 
     fn is_operation_paused(env: &Env, operation: soroban_sdk::Symbol) -> bool {
-        BountyEscrowContract::check_paused(env, operation)
+        Self::check_paused(env, operation)
     }
 }
 
@@ -5376,20 +5663,32 @@ impl traits::FeeInterface for BountyEscrowContract {
         env: &Env,
         lock_fee_rate: Option<i128>,
         release_fee_rate: Option<i128>,
+        lock_fixed_fee: Option<i128>,
+        release_fixed_fee: Option<i128>,
         fee_recipient: Option<Address>,
         fee_enabled: Option<bool>,
     ) -> Result<(), crate::Error> {
-        BountyEscrowContract::update_fee_config(
+        let entrypoint: fn(
+            Env,
+            Option<i128>,
+            Option<i128>,
+            Option<Address>,
+            Option<bool>,
+        ) -> Result<(), crate::Error> = BountyEscrowContract::update_fee_config;
+        entrypoint(
             env.clone(),
             lock_fee_rate,
             release_fee_rate,
+            lock_fixed_fee,
+            release_fixed_fee,
             fee_recipient,
             fee_enabled,
         )
     }
 
     fn get_fee_config(env: &Env) -> crate::FeeConfig {
-        BountyEscrowContract::get_fee_config(env.clone())
+        let entrypoint: fn(Env) -> crate::FeeConfig = BountyEscrowContract::get_fee_config;
+        entrypoint(env.clone())
     }
 }
 

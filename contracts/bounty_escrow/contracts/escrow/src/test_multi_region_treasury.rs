@@ -198,7 +198,7 @@ mod test_multi_region_treasury {
 
         // Configure fee and treasury distribution
         client.set_treasury_distributions(&destinations, &true);
-        client.update_fee_config(&Some(1000), &Some(500), &None, &Some(true)); // 10% lock, 5% release
+        client.update_fee_config(&Some(1000), &Some(500), &None, &None, &None, &Some(true)) // 10% lock, 5% release
 
         // Mint tokens to depositor
         token_minter.mint(&depositor, &1000);
@@ -234,12 +234,7 @@ mod test_multi_region_treasury {
         let client = make_escrow_instance(&env, &admin, &token_addr);
 
         // Configure fee with single recipient (no treasury distribution)
-        client.update_fee_config(
-            &Some(1000),
-            &Some(500),
-            &Some(fee_recipient.clone()),
-            &Some(true),
-        );
+        client.update_fee_config(&Some(1000), &Some(500), &None, &None, &Some(fee_recipient.clone()), &Some(true));
 
         // Mint tokens to depositor
         token_minter.mint(&depositor, &1000);
@@ -278,7 +273,7 @@ mod test_multi_region_treasury {
         });
 
         client.set_treasury_distributions(&destinations, &true);
-        client.update_fee_config(&Some(1000), &None, &None, &Some(true));
+        client.update_fee_config(&Some(1000), &None, &None, &None, &None, &Some(true));
 
         // Mint and lock
         token_minter.mint(&depositor, &1000);
@@ -322,7 +317,7 @@ mod test_multi_region_treasury {
 
         client.set_treasury_distributions(&destinations, &true);
         // No lock fee, but 5% release fee
-        client.update_fee_config(&Some(0), &Some(500), &None, &Some(true));
+        client.update_fee_config(&Some(0), &Some(500), &None, &None, &None, &Some(true));
 
         // Mint and lock (no lock fee)
         token_minter.mint(&depositor, &1000);
@@ -370,7 +365,7 @@ mod test_multi_region_treasury {
         });
 
         client.set_treasury_distributions(&destinations, &true);
-        client.update_fee_config(&Some(500), &Some(300), &None, &Some(true));
+        client.update_fee_config(&Some(500), &Some(300), &None, &None, &None, &Some(true));
 
         // Verify FeeConfig includes treasury configuration
         let fee_config = client.get_fee_config();

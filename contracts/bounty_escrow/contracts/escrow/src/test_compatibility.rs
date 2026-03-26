@@ -155,7 +155,7 @@ fn test_optional_parameters_backward_compatible() {
     client.init(&admin, &token);
 
     // Test that update_fee_config works with None values (optional params)
-    client.update_fee_config(&None, &None, &None, &None);
+    client.update_fee_config(&None, &None, &None, &None, &None, &None);
 
     // Config should remain unchanged
     let config = client.get_fee_config();

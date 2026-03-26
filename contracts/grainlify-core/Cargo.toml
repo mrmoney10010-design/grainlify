@@ -15,6 +15,7 @@ default = ["contract"]
 contract = []
 upgrade_rollback_tests = []
 governance_contract_tests = []
+wasm_tests = []
 
 [dependencies]
 soroban-sdk = "21.0.0"
