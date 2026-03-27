@@ -19,9 +19,8 @@ const MAX_PAGE_SIZE: u32 = 50;
 pub const DELEGATE_PERMISSION_RELEASE: u32 = 1 << 0;
 pub const DELEGATE_PERMISSION_REFUND: u32 = 1 << 1;
 pub const DELEGATE_PERMISSION_UPDATE_META: u32 = 1 << 2;
-pub const DELEGATE_PERMISSION_MASK: u32 = DELEGATE_PERMISSION_RELEASE
-    | DELEGATE_PERMISSION_REFUND
-    | DELEGATE_PERMISSION_UPDATE_META;
+pub const DELEGATE_PERMISSION_MASK: u32 =
+    DELEGATE_PERMISSION_RELEASE | DELEGATE_PERMISSION_REFUND | DELEGATE_PERMISSION_UPDATE_META;
 
 mod identity;
 pub use identity::*;
@@ -233,7 +232,9 @@ impl EscrowContract {
             .get(&DataKey::EscrowIndex)
             .unwrap_or_else(|| Vec::new(env));
         index.push_back(bounty_id);
-        env.storage().persistent().set(&DataKey::EscrowIndex, &index);
+        env.storage()
+            .persistent()
+            .set(&DataKey::EscrowIndex, &index);
     }
 
     /// Initialize with admin and token. Call once.
@@ -526,7 +527,9 @@ impl EscrowContract {
             .as_ref()
             .map(|delegate| delegate == caller)
             .unwrap_or(false);
-        if delegate_matches && (escrow.delegate_permissions & required_permission) == required_permission {
+        if delegate_matches
+            && (escrow.delegate_permissions & required_permission) == required_permission
+        {
             return Ok(());
         }
 
@@ -924,7 +927,9 @@ impl EscrowContract {
             restricted,
             allowed_labels: allowed_labels.clone(),
         };
-        env.storage().persistent().set(&DataKey::LabelConfig, &config);
+        env.storage()
+            .persistent()
+            .set(&DataKey::LabelConfig, &config);
         env.events().publish(
             (LABEL_CONFIG_UPDATED,),
             LabelConfigUpdatedEvent {

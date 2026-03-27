@@ -45,7 +45,14 @@ fn setup_max<'a>(
     client.init(&admin, &token_addr);
     token_admin.mint(&depositor, &initial_balance);
 
-    (client, contract_id, admin, depositor, contributor, token_client)
+    (
+        client,
+        contract_id,
+        admin,
+        depositor,
+        contributor,
+        token_client,
+    )
 }
 
 // ==================== STORAGE KEY UNIQUENESS ====================
