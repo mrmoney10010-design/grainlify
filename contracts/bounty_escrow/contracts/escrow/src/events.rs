@@ -929,8 +929,8 @@ pub fn emit_emergency_withdraw(env: &Env, event: EmergencyWithdrawEvent) {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityIssued {
-    /// Unique cryptographically secure capability identifier.
-    pub capability_id: BytesN<32>,
+    /// Monotonic capability id (matches [`crate::DataKey::Capability`]).
+    pub capability_id: u64,
     /// Address that created and vouches for this capability.
     pub owner: Address,
     /// Address authorised to exercise this capability.
@@ -951,7 +951,7 @@ pub struct CapabilityIssued {
 
 /// Emit [`CapabilityIssued`]
 pub fn emit_capability_issued(env: &Env, event: CapabilityIssued) {
-    let topics = (symbol_short!("cap_new"), event.capability_id.clone());
+    let topics = (symbol_short!("cap_new"), event.capability_id);
     env.events().publish(topics, event);
 }
 
@@ -975,7 +975,7 @@ pub fn emit_capability_issued(env: &Env, event: CapabilityIssued) {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityUsed {
     /// Capability that was exercised.
-    pub capability_id: BytesN<32>,
+    pub capability_id: u64,
     /// Address that exercised the capability.
     pub holder: Address,
     /// Action that was performed.
@@ -994,7 +994,7 @@ pub struct CapabilityUsed {
 
 /// Emit [`CapabilityUsed`]
 pub fn emit_capability_used(env: &Env, event: CapabilityUsed) {
-    let topics = (symbol_short!("cap_use"), event.capability_id.clone());
+    let topics = (symbol_short!("cap_use"), event.capability_id);
     env.events().publish(topics, event);
 }
 
@@ -1017,14 +1017,14 @@ pub fn emit_capability_used(env: &Env, event: CapabilityUsed) {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CapabilityRevoked {
     /// Capability that was revoked
-    pub capability_id: BytesN<32>,
+    pub capability_id: u64,
     pub owner: Address,
     pub revoked_at: u64,
 }
 
 /// Emit [`CapabilityRevoked`]
 pub fn emit_capability_revoked(env: &Env, event: CapabilityRevoked) {
-    let topics = (symbol_short!("cap_rev"), event.capability_id.clone());
+    let topics = (symbol_short!("cap_rev"), event.capability_id);
     env.events().publish(topics, event);
 }
 
@@ -1102,4 +1102,139 @@ pub struct GasBudgetCapApproached {
     pub mem_cap: u64,
     pub threshold_bps: u32,
     pub timestamp: u64,
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// TIMELOCK EVENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Payload for the [`emit_timelock_configured`] event.
+///
+/// Emitted when the admin configures the timelock settings.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"tl_cfg"` (short symbol; Soroban topic limit 9 chars) |
+///
+/// ### Data fields
+/// | Field | Type | Description |
+/// |-------|------|-------------|
+/// | `version` | `u32` | Always [`EVENT_VERSION_V2`] |
+/// | `delay` | `u64` | Configured timelock delay in seconds |
+/// | `is_enabled` | `bool` | Whether timelock is enabled |
+/// | `configured_by` | `Address` | Admin who configured the timelock |
+/// | `timestamp` | `u64` | Ledger time of configuration |
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimelockConfigured {
+    pub version: u32,
+    pub delay: u64,
+    pub is_enabled: bool,
+    pub configured_by: Address,
+    pub timestamp: u64,
+}
+
+/// Emit [`TimelockConfigured`].
+pub fn emit_timelock_configured(env: &Env, event: TimelockConfigured) {
+    let topics = (symbol_short!("tl_cfg"),);
+    env.events().publish(topics, event);
+}
+
+/// Payload for the [`emit_admin_action_proposed`] event.
+///
+/// Emitted when an admin proposes a delayed action.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"adm_prp"` |
+/// | 1 | `action_id: u64` |
+///
+/// ### Data fields
+/// | Field | Type | Description |
+/// |-------|------|-------------|
+/// | `version` | `u32` | Always [`EVENT_VERSION_V2`] |
+/// | `action_type` | `ActionType` | Type of admin action |
+/// | `execute_after` | `u64` | Timestamp when action becomes executable |
+/// | `proposed_by` | `Address` | Admin who proposed the action |
+/// | `timestamp` | `u64` | Ledger time of proposal |
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminActionProposed {
+    pub version: u32,
+    pub action_type: crate::ActionType,
+    pub execute_after: u64,
+    pub proposed_by: Address,
+    pub timestamp: u64,
+}
+
+/// Emit [`AdminActionProposed`].
+pub fn emit_admin_action_proposed(env: &Env, event: AdminActionProposed) {
+    let topics = (symbol_short!("adm_prp"),);
+    env.events().publish(topics, event);
+}
+
+/// Payload for the [`emit_admin_action_executed`] event.
+///
+/// Emitted when a proposed admin action is executed.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"adm_exe"` |
+/// | 1 | `action_id: u64` |
+///
+/// ### Data fields
+/// | Field | Type | Description |
+/// |-------|------|-------------|
+/// | `version` | `u32` | Always [`EVENT_VERSION_V2`] |
+/// | `action_type` | `ActionType` | Type of admin action |
+/// | `executed_by` | `Address` | Address that executed the action |
+/// | `executed_at` | `u64` | Ledger time of execution |
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminActionExecuted {
+    pub version: u32,
+    pub action_type: crate::ActionType,
+    pub executed_by: Address,
+    pub executed_at: u64,
+}
+
+/// Emit [`AdminActionExecuted`].
+pub fn emit_admin_action_executed(env: &Env, event: AdminActionExecuted) {
+    let topics = (symbol_short!("adm_exe"),);
+    env.events().publish(topics, event);
+}
+
+/// Payload for the [`emit_admin_action_cancelled`] event.
+///
+/// Emitted when an admin cancels a pending action.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"adm_can"` |
+/// | 1 | `action_id: u64` |
+///
+/// ### Data fields
+/// | Field | Type | Description |
+/// |-------|------|-------------|
+/// | `version` | `u32` | Always [`EVENT_VERSION_V2`] |
+/// | `action_type` | `ActionType` | Type of admin action |
+/// | `cancelled_by` | `Address` | Admin who cancelled the action |
+/// | `cancelled_at` | `u64` | Ledger time of cancellation |
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AdminActionCancelled {
+    pub version: u32,
+    pub action_type: crate::ActionType,
+    pub cancelled_by: Address,
+    pub cancelled_at: u64,
+}
+
+/// Emit [`AdminActionCancelled`].
+pub fn emit_admin_action_cancelled(env: &Env, event: AdminActionCancelled) {
+    let topics = (symbol_short!("adm_can"),);
+    env.events().publish(topics, event);
 }

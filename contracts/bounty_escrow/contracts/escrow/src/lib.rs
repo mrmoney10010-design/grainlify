@@ -20,6 +20,7 @@ mod test_metadata;
 
 #[cfg(test)]
 mod test_boundary_edge_cases;
+#[cfg(test)]
 mod test_cross_contract_interface;
 #[cfg(test)]
 mod test_deterministic_randomness;
@@ -36,6 +37,7 @@ mod test_frozen_balance;
 pub mod gas_budget;
 mod traits;
 pub mod upgrade_safety;
+pub mod audit_trail;
 
 #[cfg(test)]
 mod test_gas_budget;
@@ -47,19 +49,24 @@ mod test_deterministic_error_ordering;
 
 #[cfg(test)]
 mod test_reentrancy_guard;
+#[cfg(test)]
+mod test_timelock;
 
-use events::{
+use crate::events::{
+    emit_admin_action_cancelled, emit_admin_action_executed, emit_admin_action_proposed,
     emit_batch_funds_locked, emit_batch_funds_released, emit_bounty_initialized,
     emit_deprecation_state_changed, emit_deterministic_selection, emit_escrow_cleaned_up,
     emit_escrow_expired, emit_expiry_config_updated, emit_funds_locked, emit_funds_locked_anon,
     emit_funds_refunded, emit_funds_released, emit_maintenance_mode_changed,
     emit_notification_preferences_updated, emit_participant_filter_mode_changed,
-    emit_risk_flags_updated, emit_ticket_claimed, emit_ticket_issued, BatchFundsLocked,
+    emit_risk_flags_updated, emit_ticket_claimed, emit_ticket_issued, emit_timelock_configured,
+    AdminActionCancelled, AdminActionExecuted, AdminActionProposed, BatchFundsLocked,
     BatchFundsReleased, BountyEscrowInitialized, ClaimCancelled, ClaimCreated, ClaimExecuted,
     CriticalOperationOutcome, DeprecationStateChanged, DeterministicSelectionDerived,
     EscrowCleanedUp, EscrowExpired, ExpiryConfigUpdated, FundsLocked, FundsLockedAnon,
     FundsRefunded, FundsReleased, MaintenanceModeChanged, NotificationPreferencesUpdated,
-    ParticipantFilterModeChanged, RiskFlagsUpdated, TicketClaimed, TicketIssued, EVENT_VERSION_V2,
+    ParticipantFilterModeChanged, RefundTriggerType, RiskFlagsUpdated, TicketClaimed, TicketIssued,
+    TimelockConfigured, EVENT_VERSION_V2,
 };
 use soroban_sdk::xdr::ToXdr;
 use soroban_sdk::{
@@ -530,6 +537,17 @@ const BASIS_POINTS: i128 = 10_000;
 const MAX_FEE_RATE: i128 = 5_000; // 50% max fee
 const MAX_BATCH_SIZE: u32 = 20;
 
+// ============================================================================
+// TIMELOCK CONSTANTS
+// ============================================================================
+
+/// Minimum timelock delay in seconds (1 hour) - absolute floor
+const MINIMUM_DELAY: u64 = 3_600;
+/// Default recommended timelock delay in seconds (24 hours)
+const DEFAULT_DELAY: u64 = 86_400;
+/// Maximum timelock delay in seconds (30 days)
+const MAX_DELAY: u64 = 2_592_000;
+
 extern crate grainlify_core;
 use grainlify_core::asset;
 use grainlify_core::pseudo_randomness;
@@ -563,7 +581,74 @@ pub enum ReleaseType {
     Automatic = 2,
 }
 
-#[contracterror]
+// ============================================================================
+// TIMELOCK DATA STRUCTURES
+// ============================================================================
+
+/// Types of admin actions that require timelock protection
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ActionType {
+    ChangeAdmin = 1,
+    ChangeFeeRecipient = 2,
+    EnableKillSwitch = 3,
+    DisableKillSwitch = 4,
+    SetMaintenanceMode = 5,
+    UnsetMaintenanceMode = 6,
+    SetPaused = 7,
+    UnsetPaused = 8,
+}
+
+/// Status of a pending admin action
+#[contracttype]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum ActionStatus {
+    Pending = 1,
+    Executed = 2,
+    Cancelled = 3,
+}
+
+/// Payload for admin actions - encoded variant-specific parameters.
+///
+/// Soroban `contracttype` enums only support tuple / unit variants (no struct fields).
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ActionPayload {
+    ChangeAdmin(Address),
+    ChangeFeeRecipient(Address),
+    EnableKillSwitch,
+    DisableKillSwitch,
+    SetMaintenanceMode(bool),
+    SetPaused(Option<bool>, Option<bool>, Option<bool>),
+}
+
+/// A pending admin action awaiting execution
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingAction {
+    pub action_id: u64,
+    pub action_type: ActionType,
+    pub payload: ActionPayload,
+    pub proposed_by: Address,
+    pub proposed_at: u64,
+    pub execute_after: u64,
+    pub status: ActionStatus,
+}
+
+/// Timelock configuration
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TimelockConfig {
+    pub delay: u64,
+    pub is_enabled: bool,
+}
+
+// Soroban XDR spec allows at most 50 error cases (`SCSpecUDTErrorEnumCaseV0 cases<50>`);
+// this enum intentionally carries more stable on-chain codes than that limit, so we
+// disable metadata export while keeping full `TryFrom<soroban_sdk::Error>` behavior.
+#[contracterror(export = false)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
 pub enum Error {
@@ -641,6 +726,24 @@ pub enum Error {
     EscrowFrozen = 48,
     /// Returned when the escrow depositor is explicitly frozen by an admin hold.
     AddressFrozen = 49,
+    /// Returned when timelock is not enabled but propose was called (shouldn't happen)
+    TimelockNotEnabled = 50,
+    /// Returned when execute is called before the timelock delay has elapsed
+    TimelockNotElapsed = 51,
+    /// Returned when direct admin call is attempted while timelock is enabled
+    TimelockEnabled = 52,
+    /// Returned when the requested action_id does not exist
+    ActionNotFound = 53,
+    /// Returned when the action has already been executed
+    ActionAlreadyExecuted = 54,
+    /// Returned when the action has already been cancelled
+    ActionAlreadyCancelled = 55,
+    /// Returned when the payload does not match the action type
+    InvalidPayload = 56,
+    /// Returned when configured delay is below minimum
+    DelayBelowMinimum = 57,
+    /// Returned when configured delay is above maximum
+    DelayAboveMaximum = 58,
 }
 
 /// Bit flag: escrow or payout should be treated as elevated risk (indexers, UIs).
@@ -835,6 +938,11 @@ pub enum DataKey {
     /// Per-operation gas budget caps configured by the admin.
     /// See [`gas_budget::GasBudgetConfig`].
     GasBudgetConfig,
+
+    /// Timelock configuration and pending actions
+    TimelockConfig,           // TimelockConfig struct
+    PendingAction(u64),      // action_id -> PendingAction
+    ActionCounter,           // monotonically increasing action_id
 }
 
 #[contracttype]
@@ -1112,6 +1220,18 @@ impl BountyEscrowContract {
     pub fn get_state_snapshot(env: Env) -> monitoring::StateSnapshot {
         monitoring::get_state_snapshot(&env)
     }
+    /// Enable or disable the on-chain append-only audit log (Admin only).
+    pub fn set_audit_enabled(env: Env, enabled: bool) -> Result<(), Error> {
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).ok_or(Error::NotInitialized)?;
+        admin.require_auth();
+        audit_trail::set_enabled(&env, enabled);
+        Ok(())
+    }
+
+    /// Retrieve the last `n` records from the audit log.
+    pub fn get_audit_tail(env: Env, n: u32) -> Vec<audit_trail::AuditRecord> {
+        audit_trail::get_audit_tail(&env, n)
+    }
 
     fn order_batch_lock_items(env: &Env, items: &Vec<LockFundsItem>) -> Vec<LockFundsItem> {
         let mut ordered: Vec<LockFundsItem> = Vec::new(env);
@@ -1361,7 +1481,7 @@ impl BountyEscrowContract {
             events::emit_fee_collected(
                 env,
                 events::FeeCollected {
-                    operation_type,
+                    operation_type: operation_type.clone(),
                     amount: fee_amount,
                     fee_rate,
                     fee_fixed,
@@ -1388,7 +1508,7 @@ impl BountyEscrowContract {
             events::emit_fee_collected(
                 env,
                 events::FeeCollected {
-                    operation_type,
+                    operation_type: operation_type.clone(),
                     amount: fee_amount,
                     fee_rate,
                     fee_fixed,
@@ -1416,28 +1536,29 @@ impl BountyEscrowContract {
                 .checked_add(share)
                 .ok_or(Error::InvalidAmount)?;
 
-            if share <= 0 {
-                continue;
+            if share > 0 {
+                client.transfer(&env.current_contract_address(), &destination.address, &share);
+                events::emit_fee_collected(
+                    env,
+                    events::FeeCollected {
+                        operation_type: operation_type.clone(),
+                        amount: share,
+                        fee_rate,
+                        fee_fixed,
+                        recipient: destination.address.clone(),
+                        timestamp: env.ledger().timestamp(),
+                    },
+                );
             }
-
-            client.transfer(&env.current_contract_address(), &destination.address, &share);
-            events::emit_fee_collected(
-                env,
-                events::FeeCollected {
-                    operation_type: operation_type.clone(),
-                    amount: share,
-                    fee_rate,
-                    fee_fixed,
-                    recipient: destination.address,
-                    timestamp: env.ledger().timestamp(),
-                },
-            );
         }
-
         Ok(())
     }
 
     /// Update fee configuration (admin only)
+    /// 
+    /// # Timelock Guard
+    /// When timelock is enabled, this function returns `TimelockEnabled`.
+    /// Use `propose_admin_action` with `ActionType::ChangeFeeRecipient` instead.
     pub fn update_fee_config(
         env: Env,
         lock_fee_rate: Option<i128>,
@@ -1450,6 +1571,9 @@ impl BountyEscrowContract {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
+
+        // Timelock guard: reject direct calls when timelock is enabled
+        Self::check_timelock_guard(&env)?;
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
@@ -1563,6 +1687,10 @@ impl BountyEscrowContract {
     /// # Errors
     /// Returns `Error::NotInitialized` if the admin has not been set.
     /// Returns `Error::Unauthorized` if the caller is not the registered admin.
+    /// 
+    /// # Timelock Guard
+    /// When timelock is enabled, this function returns `TimelockEnabled`.
+    /// Use `propose_admin_action` with `ActionType::SetPaused` instead.
     pub fn set_paused(
         env: Env,
         lock: Option<bool>,
@@ -1573,6 +1701,9 @@ impl BountyEscrowContract {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
+
+        // Timelock guard: reject direct calls when timelock is enabled
+        Self::check_timelock_guard(&env)?;
 
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
@@ -1734,6 +1865,10 @@ impl BountyEscrowContract {
     /// Set deprecation (kill switch) and optional migration target. Admin only.
     /// When deprecated is true: new lock_funds and batch_lock_funds are blocked; existing escrows
     /// can still release, refund, or be migrated off-chain. Emits DeprecationStateChanged.
+    /// 
+    /// # Timelock Guard
+    /// When timelock is enabled, this function returns `TimelockEnabled`.
+    /// Use `propose_admin_action` with `ActionType::EnableKillSwitch` or `ActionType::DisableKillSwitch` instead.
     pub fn set_deprecated(
         env: Env,
         deprecated: bool,
@@ -1742,6 +1877,10 @@ impl BountyEscrowContract {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
+        
+        // Timelock guard: reject direct calls when timelock is enabled
+        Self::check_timelock_guard(&env)?;
+        
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
@@ -1888,6 +2027,14 @@ impl BountyEscrowContract {
         Self::get_escrow_freeze_record_internal(&env, bounty_id)
     }
 
+    /// Returns the escrow record for `bounty_id`. Panics if not found.
+    pub fn get_escrow(env: Env, bounty_id: u64) -> Escrow {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Escrow(bounty_id))
+            .expect("bounty not found")
+    }
+
     /// Freeze all release/refund operations for escrows owned by `address`.
     ///
     /// Read-only queries remain available while the freeze is active.
@@ -1964,10 +2111,18 @@ impl BountyEscrowContract {
     }
 
     /// Update maintenance mode (admin only)
+    /// 
+    /// # Timelock Guard
+    /// When timelock is enabled, this function returns `TimelockEnabled`.
+    /// Use `propose_admin_action` with `ActionType::SetMaintenanceMode` instead.
     pub fn set_maintenance_mode(env: Env, enabled: bool) -> Result<(), Error> {
         if !env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::NotInitialized);
         }
+        
+        // Timelock guard: reject direct calls when timelock is enabled
+        Self::check_timelock_guard(&env)?;
+        
         let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
         admin.require_auth();
 
@@ -1983,6 +2138,468 @@ impl BountyEscrowContract {
                 timestamp: env.ledger().timestamp(),
             },
         );
+        Ok(())
+    }
+
+    // ============================================================================
+    // TIMELOCK FUNCTIONS
+    // ============================================================================
+
+    /// Configure timelock settings (admin only).
+    /// 
+    /// # Arguments
+    /// * `delay` - Timelock delay in seconds (must be between MINIMUM_DELAY and MAX_DELAY)
+    /// * `is_enabled` - Whether timelock is enabled
+    /// 
+    /// # Errors
+    /// * `NotInitialized` - Contract not initialized
+    /// * `Unauthorized` - Caller not admin
+    /// * `DelayBelowMinimum` - Delay < MINIMUM_DELAY
+    /// * `DelayAboveMaximum` - Delay > MAX_DELAY
+    /// 
+    /// # Events
+    /// * `TimelockConfigured` - Emitted when configuration changes
+    /// 
+    /// # Design Note
+    /// This function bypasses the timelock (bootstrap problem). The initial admin
+    /// must trust this function or the contract can never enable timelock protection.
+    pub fn configure_timelock(env: Env, delay: u64, is_enabled: bool) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Validate delay bounds if timelock is being enabled
+        if is_enabled {
+            if delay < MINIMUM_DELAY {
+                return Err(Error::DelayBelowMinimum);
+            }
+            if delay > MAX_DELAY {
+                return Err(Error::DelayAboveMaximum);
+            }
+        }
+
+        let config = TimelockConfig { delay, is_enabled };
+        env.storage()
+            .instance()
+            .set(&DataKey::TimelockConfig, &config);
+
+        emit_timelock_configured(
+            &env,
+            TimelockConfigured {
+                version: EVENT_VERSION_V2,
+                delay,
+                is_enabled,
+                configured_by: admin,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Get current timelock configuration
+    pub fn get_timelock_config(env: Env) -> TimelockConfig {
+        env.storage()
+            .instance()
+            .get(&DataKey::TimelockConfig)
+            .unwrap_or(TimelockConfig {
+                delay: DEFAULT_DELAY,
+                is_enabled: false,
+            })
+    }
+
+    /// Propose an admin action with optional timelock delay.
+    /// 
+    /// If timelock is disabled, executes immediately and returns 0.
+    /// If timelock is enabled, creates a pending action and returns the action_id.
+    /// 
+    /// # Arguments
+    /// * `action_type` - Type of admin action
+    /// * `payload` - Action-specific parameters
+    /// 
+    /// # Returns
+    /// * `u64` - Action ID if pending, 0 if executed immediately
+    /// 
+    /// # Errors
+    /// * `NotInitialized` - Contract not initialized
+    /// * `Unauthorized` - Caller not admin
+    /// * `InvalidPayload` - Payload doesn't match action type
+    /// * `TimelockNotEnabled` - Shouldn't happen (logic error)
+    pub fn propose_admin_action(
+        env: Env,
+        action_type: ActionType,
+        payload: ActionPayload,
+    ) -> Result<u64, Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Validate payload matches action type
+        Self::validate_payload_matches_action_type(&action_type, &payload)?;
+
+        let timelock_config = Self::get_timelock_config(env.clone());
+
+        if !timelock_config.is_enabled {
+            // Execute immediately - bypass timelock
+            Self::execute_action(env.clone(), payload.clone())?;
+            return Ok(0); // Signal immediate execution
+        }
+
+        // Create pending action
+        let action_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ActionCounter)
+            .unwrap_or(0u64)
+            .checked_add(1u64)
+            .unwrap_or(0u64);
+
+        let current_timestamp = env.ledger().timestamp();
+        let execute_after = current_timestamp
+            .checked_add(timelock_config.delay)
+            .unwrap_or(current_timestamp);
+
+        let pending_action = PendingAction {
+            action_id,
+            action_type,
+            payload: payload.clone(),
+            proposed_by: admin.clone(),
+            proposed_at: current_timestamp,
+            execute_after,
+            status: ActionStatus::Pending,
+        };
+
+        // Store the action and increment counter
+        env.storage()
+            .persistent()
+            .set(&DataKey::PendingAction(action_id), &pending_action);
+        env.storage()
+            .instance()
+            .set(&DataKey::ActionCounter, &action_id);
+
+        emit_admin_action_proposed(
+            &env,
+            AdminActionProposed {
+                version: EVENT_VERSION_V2,
+                action_type,
+                execute_after,
+                proposed_by: admin,
+                timestamp: current_timestamp,
+            },
+        );
+
+        Ok(action_id)
+    }
+
+    /// Execute a pending admin action after the timelock delay.
+    /// 
+    /// Anyone can call this function - it's permissionless by design.
+    /// The action will only execute if the delay has elapsed.
+    /// 
+    /// # Arguments
+    /// * `action_id` - ID of the pending action
+    /// 
+    /// # Errors
+    /// * `ActionNotFound` - Action doesn't exist
+    /// * `ActionAlreadyExecuted` - Action already executed
+    /// * `ActionAlreadyCancelled` - Action already cancelled
+    /// * `TimelockNotElapsed` - Delay hasn't elapsed yet
+    pub fn execute_after_delay(env: Env, action_id: u64) -> Result<(), Error> {
+        // Load pending action
+        let mut action: PendingAction = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAction(action_id))
+            .ok_or(Error::ActionNotFound)?;
+
+        // Check status
+        if action.status == ActionStatus::Executed {
+            return Err(Error::ActionAlreadyExecuted);
+        }
+        if action.status == ActionStatus::Cancelled {
+            return Err(Error::ActionAlreadyCancelled);
+        }
+
+        // Check timelock elapsed
+        let current_timestamp = env.ledger().timestamp();
+        if current_timestamp < action.execute_after {
+            return Err(Error::TimelockNotElapsed);
+        }
+
+        let payload = action.payload.clone();
+
+        // Execute the action
+        Self::execute_action(env.clone(), payload)?;
+
+        // Update status
+        action.status = ActionStatus::Executed;
+        env.storage()
+            .persistent()
+            .set(&DataKey::PendingAction(action_id), &action);
+
+        emit_admin_action_executed(
+            &env,
+            AdminActionExecuted {
+                version: EVENT_VERSION_V2,
+                action_type: action.action_type,
+                executed_by: env.current_contract_address(), // Any caller can execute
+                executed_at: current_timestamp,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Cancel a pending admin action (admin only).
+    /// 
+    /// # Arguments
+    /// * `action_id` - ID of the pending action
+    /// 
+    /// # Errors
+    /// * `NotInitialized` - Contract not initialized
+    /// * `Unauthorized` - Caller not admin
+    /// * `ActionNotFound` - Action doesn't exist
+    /// * `ActionAlreadyExecuted` - Action already executed
+    /// * `ActionAlreadyCancelled` - Action already cancelled
+    pub fn cancel_admin_action(env: Env, action_id: u64) -> Result<(), Error> {
+        if !env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::NotInitialized);
+        }
+        let admin: Address = env.storage().instance().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
+
+        // Load pending action
+        let mut action: PendingAction = env
+            .storage()
+            .persistent()
+            .get(&DataKey::PendingAction(action_id))
+            .ok_or(Error::ActionNotFound)?;
+
+        // Check status
+        if action.status == ActionStatus::Executed {
+            return Err(Error::ActionAlreadyExecuted);
+        }
+        if action.status == ActionStatus::Cancelled {
+            return Err(Error::ActionAlreadyCancelled);
+        }
+
+        // Update status
+        action.status = ActionStatus::Cancelled;
+        env.storage()
+            .persistent()
+            .set(&DataKey::PendingAction(action_id), &action);
+
+        emit_admin_action_cancelled(
+            &env,
+            AdminActionCancelled {
+                version: EVENT_VERSION_V2,
+                action_type: action.action_type,
+                cancelled_by: admin,
+                cancelled_at: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Get all pending admin actions ordered by proposal time.
+    /// 
+    /// This provides public visibility into proposed admin actions.
+    pub fn get_pending_actions(env: Env) -> Vec<PendingAction> {
+        let mut pending = Vec::new(&env);
+        
+        // Get the action counter to know the range to search
+        let counter: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::ActionCounter)
+            .unwrap_or(0u64);
+
+        // Collect all pending actions
+        for action_id in 1..=counter {
+            if let Some(action) = env.storage().persistent().get::<DataKey, PendingAction>(
+                &DataKey::PendingAction(action_id),
+            ) {
+                if action.status == ActionStatus::Pending {
+                    pending.push_back(action);
+                }
+            }
+        }
+
+        // Iteration 1..=counter preserves monotonic `action_id` / proposal order; Soroban `Vec`
+        // has no `sort`, and ids are allocated sequentially in `propose_admin_action`.
+        pending
+    }
+
+    /// Get a specific admin action by ID.
+    /// 
+    /// # Errors
+    /// * `ActionNotFound` - Action doesn't exist
+    pub fn get_action(env: Env, action_id: u64) -> Result<PendingAction, Error> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::PendingAction(action_id))
+            .ok_or(Error::ActionNotFound)
+    }
+
+    // ============================================================================
+    // PRIVATE TIMELOCK HELPERS
+    // ============================================================================
+
+    /// Check if timelock is enabled and reject direct admin calls if so
+    fn check_timelock_guard(env: &Env) -> Result<(), Error> {
+        let timelock_config = Self::get_timelock_config(env.clone());
+        if timelock_config.is_enabled {
+            return Err(Error::TimelockEnabled);
+        }
+        Ok(())
+    }
+
+    /// Validate that payload matches the expected action type
+    fn validate_payload_matches_action_type(
+        action_type: &ActionType,
+        payload: &ActionPayload,
+    ) -> Result<(), Error> {
+        match (action_type, payload) {
+            (ActionType::ChangeAdmin, ActionPayload::ChangeAdmin(_)) => Ok(()),
+            (ActionType::ChangeFeeRecipient, ActionPayload::ChangeFeeRecipient(_)) => Ok(()),
+            (ActionType::EnableKillSwitch, ActionPayload::EnableKillSwitch) => Ok(()),
+            (ActionType::DisableKillSwitch, ActionPayload::DisableKillSwitch) => Ok(()),
+            (ActionType::SetMaintenanceMode, ActionPayload::SetMaintenanceMode(_)) => Ok(()),
+            (ActionType::UnsetMaintenanceMode, ActionPayload::SetMaintenanceMode(_)) => Ok(()),
+            (ActionType::SetPaused, ActionPayload::SetPaused(_, _, _)) => Ok(()),
+            (ActionType::UnsetPaused, ActionPayload::SetPaused(_, _, _)) => Ok(()),
+            _ => Err(Error::InvalidPayload),
+        }
+    }
+
+    /// Execute an admin action (bypasses all auth checks)
+    fn execute_action(env: Env, payload: ActionPayload) -> Result<(), Error> {
+        match payload {
+            ActionPayload::ChangeAdmin(new_admin) => Self::_execute_change_admin(env, new_admin),
+            ActionPayload::ChangeFeeRecipient(new_recipient) => {
+                Self::_execute_change_fee_recipient(env, new_recipient)
+            }
+            ActionPayload::EnableKillSwitch => Self::_execute_set_deprecated(env, true, None),
+            ActionPayload::DisableKillSwitch => Self::_execute_set_deprecated(env, false, None),
+            ActionPayload::SetMaintenanceMode(enabled) => {
+                Self::_execute_set_maintenance_mode(env, enabled)
+            }
+            ActionPayload::SetPaused(lock, release, refund) => {
+                Self::_execute_set_paused(env, lock, release, refund, None)
+            }
+        }
+    }
+
+    // ============================================================================
+    // PRIVATE EXECUTION HELPERS (called by timelock)
+    // ============================================================================
+
+    /// Private helper to change admin without auth checks
+    fn _execute_change_admin(env: Env, new_admin: Address) -> Result<(), Error> {
+        env.storage()
+            .instance()
+            .set(&DataKey::Admin, &new_admin);
+        Ok(())
+    }
+
+    /// Private helper to change fee recipient without auth checks
+    fn _execute_change_fee_recipient(env: Env, new_recipient: Address) -> Result<(), Error> {
+        let mut fee_config = Self::get_fee_config_internal(&env);
+        fee_config.fee_recipient = new_recipient;
+        env.storage()
+            .instance()
+            .set(&DataKey::FeeConfig, &fee_config);
+
+        events::emit_fee_config_updated(
+            &env,
+            events::FeeConfigUpdated {
+                lock_fee_rate: fee_config.lock_fee_rate,
+                release_fee_rate: fee_config.release_fee_rate,
+                lock_fixed_fee: fee_config.lock_fixed_fee,
+                release_fixed_fee: fee_config.release_fixed_fee,
+                fee_recipient: fee_config.fee_recipient.clone(),
+                fee_enabled: fee_config.fee_enabled,
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Private helper to set deprecation without auth checks
+    fn _execute_set_deprecated(env: Env, deprecated: bool, migration_target: Option<Address>) -> Result<(), Error> {
+        let state = DeprecationState {
+            deprecated,
+            migration_target: migration_target.clone(),
+        };
+        env.storage()
+            .instance()
+            .set(&DataKey::DeprecationState, &state);
+        
+        emit_deprecation_state_changed(
+            &env,
+            DeprecationStateChanged {
+                deprecated: state.deprecated,
+                migration_target: state.migration_target,
+                admin: rbac::require_admin(&env), // For event purposes
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+        Ok(())
+    }
+
+    /// Private helper to set maintenance mode without auth checks
+    fn _execute_set_maintenance_mode(env: Env, enabled: bool) -> Result<(), Error> {
+        env.storage()
+            .instance()
+            .set(&DataKey::MaintenanceMode, &enabled);
+
+        events::emit_maintenance_mode_changed(
+            &env,
+            MaintenanceModeChanged {
+                enabled,
+                admin: rbac::require_admin(&env), // For event purposes
+                timestamp: env.ledger().timestamp(),
+            },
+        );
+        Ok(())
+    }
+
+    /// Private helper to set pause flags without auth checks
+    fn _execute_set_paused(
+        env: Env,
+        lock: Option<bool>,
+        release: Option<bool>,
+        refund: Option<bool>,
+        reason: Option<soroban_sdk::String>,
+    ) -> Result<(), Error> {
+        let mut flags = Self::get_pause_flags(&env);
+
+        if let Some(lock_paused) = lock {
+            flags.lock_paused = lock_paused;
+        }
+        if let Some(release_paused) = release {
+            flags.release_paused = release_paused;
+        }
+        if let Some(refund_paused) = refund {
+            flags.refund_paused = refund_paused;
+        }
+        if reason.is_some() {
+            flags.pause_reason = reason;
+        }
+        if lock.is_some() || release.is_some() || refund.is_some() {
+            flags.paused_at = env.ledger().timestamp();
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::PauseFlags, &flags);
+
         Ok(())
     }
 
@@ -3100,7 +3717,7 @@ impl BountyEscrowContract {
                 return Err(e);
             }
         }
-
+        audit_trail::log_action(&env, symbol_short!("lock"), depositor.clone(), bounty_id);
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
         Ok(())
@@ -3538,7 +4155,7 @@ impl BountyEscrowContract {
                 timestamp: env.ledger().timestamp(),
             },
         );
-
+        audit_trail::log_action(&env, symbol_short!("release"), contributor.clone(), bounty_id);
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
         Ok(())
@@ -4290,6 +4907,11 @@ impl BountyEscrowContract {
                 amount: refund_amount,
                 refund_to: refund_to.clone(),
                 timestamp: now,
+                trigger_type: if approval.is_some() {
+                    RefundTriggerType::AdminApproval
+                } else {
+                    RefundTriggerType::DeadlineExpired
+                },
             },
         );
         Self::record_receipt(
@@ -4318,7 +4940,7 @@ impl BountyEscrowContract {
                 return Err(e);
             }
         }
-
+        audit_trail::log_action(&env, symbol_short!("refund"), escrow.depositor.clone(), bounty_id);
         // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
         Ok(())
@@ -4557,6 +5179,11 @@ impl BountyEscrowContract {
                 amount: refund_amount,
                 refund_to: refund_to.clone(),
                 timestamp: now,
+                trigger_type: if approval.is_some() {
+                    RefundTriggerType::AdminApproval
+                } else {
+                    RefundTriggerType::DeadlineExpired
+                },
             },
         );
 
@@ -4632,7 +5259,7 @@ impl BountyEscrowContract {
         let now = env.ledger().timestamp();
         let refund_to = escrow.depositor.clone();
 
-        escrow.remaining_amount -= amount;
+        escrow.remaining_amount = escrow.remaining_amount.saturating_sub(amount);
         if escrow.remaining_amount == 0 {
             escrow.status = EscrowStatus::Refunded;
         } else {
@@ -4665,8 +5292,9 @@ impl BountyEscrowContract {
                 version: EVENT_VERSION_V2,
                 bounty_id,
                 amount,
-                refund_to,
+                refund_to: refund_to.clone(),
                 timestamp: now,
+                trigger_type: RefundTriggerType::AdminApproval,
             },
         );
 
@@ -6879,3 +7507,5 @@ mod test_status_transitions;
 mod test_upgrade_scenarios;
 #[cfg(test)]
 mod test_escrow_expiry;
+#[cfg(test)]
+mod test_max_counts;

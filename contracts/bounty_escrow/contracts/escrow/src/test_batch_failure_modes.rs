@@ -330,7 +330,6 @@ fn batch_lock_duplicate_last_item_rolls_back_all_previous_siblings() {
         "sibling bounty 11 must not be stored"
     );
 }
-
 // ---------------------------------------------------------------------------
 // Uninitialized contract
 // ---------------------------------------------------------------------------
