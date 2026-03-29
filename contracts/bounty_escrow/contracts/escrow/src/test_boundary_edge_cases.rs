@@ -133,14 +133,14 @@ fn test_amount_policy_rejects_out_of_range() {
             .try_lock_funds(&depositor, &1u64, &(min_amount - 1), &deadline)
             .unwrap_err()
             .unwrap(),
-        Error::AmountBelowMinimum
+        Error::InvalidAmount
     );
     assert_eq!(
         client
             .try_lock_funds(&depositor, &2u64, &(max_amount + 1), &deadline)
             .unwrap_err()
             .unwrap(),
-        Error::AmountAboveMaximum
+        Error::InvalidAmount
     );
 
     assert!(client

@@ -263,8 +263,16 @@ impl EscrowContract {
         Ok(())
     }
 
-    /// Set or update an authorized claim issuer (admin only)
-    pub fn set_authorized_issuer(env: Env, issuer: Address, authorized: bool) -> Result<(), Error> {
+    /// Set or update an authorized claim issuer (admin only).
+    ///
+    /// The issuer's Ed25519 public key is bound to the issuer Address at
+    /// authorization time to prevent claims signed with an attacker key.
+    pub fn set_authorized_issuer(
+        env: Env,
+        issuer: Address,
+        issuer_pubkey: BytesN<32>,
+        authorized: bool,
+    ) -> Result<(), Error> {
         let admin: Address = env
             .storage()
             .instance()
@@ -272,9 +280,15 @@ impl EscrowContract {
             .ok_or(Error::NotInitialized)?;
         admin.require_auth();
 
-        env.storage()
-            .persistent()
-            .set(&DataKey::AuthorizedIssuer(issuer.clone()), &authorized);
+        if authorized {
+            env.storage()
+                .persistent()
+                .set(&DataKey::AuthorizedIssuer(issuer.clone()), &issuer_pubkey);
+        } else {
+            env.storage()
+                .persistent()
+                .remove(&DataKey::AuthorizedIssuer(issuer.clone()));
+        }
 
         // Emit event for issuer management
         env.events().publish(
@@ -341,12 +355,15 @@ impl EscrowContract {
         Ok(())
     }
 
-    /// Submit an identity claim for verification and storage
+    /// Submit an identity claim for verification and storage.
+    ///
+    /// The issuer's Ed25519 public key is looked up from the on-chain
+    /// authorization store, closing the spoofing vector where a claim could
+    /// reference an authorized issuer but supply a different signing key.
     pub fn submit_identity_claim(
         env: Env,
         claim: IdentityClaim,
         signature: BytesN<64>,
-        issuer_pubkey: BytesN<32>,
     ) -> Result<(), Error> {
         // Require authentication from the address in the claim
         claim.address.require_auth();
@@ -368,23 +385,16 @@ impl EscrowContract {
             return Err(Error::ClaimExpired);
         }
 
-        // Check if issuer is authorized
-        let is_authorized: bool = env
+        // Look up the issuer's bound public key from storage.
+        let issuer_pubkey: BytesN<32> = env
             .storage()
             .persistent()
             .get(&DataKey::AuthorizedIssuer(claim.issuer.clone()))
-            .unwrap_or(false);
+            .ok_or(Error::UnauthorizedIssuer)?;
 
-        if !is_authorized {
-            env.events().publish(
-                (soroban_sdk::symbol_short!("claim"), claim.address.clone()),
-                soroban_sdk::symbol_short!("unauth"),
-            );
-            return Err(Error::UnauthorizedIssuer);
-        }
-
-        // Verify claim signature
-        identity::verify_claim_signature(&env, &claim, &signature, &issuer_pubkey)?;
+        // ed25519_verify panics on invalid signatures; the host surfaces that
+        // as a failed transaction.
+        identity::verify_claim_signature(&env, &claim, &signature, &issuer_pubkey);
 
         // Store identity data for the address
         let now = env.ledger().timestamp();

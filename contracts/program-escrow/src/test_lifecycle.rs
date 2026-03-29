@@ -86,6 +86,7 @@ fn setup_active_program(
     let admin = Address::generate(env);
     let program_id = String::from_str(env, "hack-2026");
     client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
+    client.publish_program();
     if amount > 0 {
         client.lock_program_funds(&amount);
     }
@@ -304,13 +305,10 @@ fn test_metadata_only_delegate_cannot_execute_release() {
         tags: vec![&env, String::from_str(&env, "delegate")],
         start_date: Some(1),
         end_date: Some(2),
-        custom_fields: vec![
-            &env,
-            (
-                String::from_str(&env, "track"),
-                String::from_str(&env, "infra"),
-            ),
-        ],
+        custom_fields: vec![&env, ProgramMetadataField {
+            key: String::from_str(&env, "track"),
+            value: String::from_str(&env, "infra"),
+        }],
     };
 
     let updated = client.update_program_metadata_by(&delegate, &program_id, &metadata);

@@ -1,7 +1,10 @@
 #![cfg(test)]
 
 use crate::{ContractKind, FacadeError, ViewFacade, ViewFacadeClient};
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{
+    testutils::{Address as _, MockAuth, MockAuthInvoke},
+    Address, Env, IntoVal,
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -14,6 +17,21 @@ use soroban_sdk::{testutils::Address as _, Address, Env};
 fn setup() -> (Env, ViewFacadeClient<'static>, Address) {
     let env = Env::default();
     env.mock_all_auths();
+
+    let facade_id = env.register_contract(None, ViewFacade);
+    let facade = ViewFacadeClient::new(&env, &facade_id);
+
+    let admin = Address::generate(&env);
+    (env, facade, admin)
+}
+
+/// Boot a fresh ViewFacade instance without global auth mocks.
+///
+/// Use this helper when a test needs to prove that `register` / `deregister`
+/// require the stored admin address specifically, rather than passing under
+/// `mock_all_auths()`.
+fn setup_without_auth_mocks() -> (Env, ViewFacadeClient<'static>, Address) {
+    let env = Env::default();
 
     let facade_id = env.register_contract(None, ViewFacade);
     let facade = ViewFacadeClient::new(&env, &facade_id);
@@ -95,7 +113,10 @@ fn test_init_emits_initialized_event() {
         payload.admin == admin
     });
 
-    assert!(found, "Initialized event must be emitted with correct admin");
+    assert!(
+        found,
+        "Initialized event must be emitted with correct admin"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -172,6 +193,57 @@ fn test_register_before_init_rejected() {
 
     let result = facade.try_register(&addr, &ContractKind::BountyEscrow, &1);
     assert_eq!(result, Err(Ok(FacadeError::NotInitialized)));
+}
+
+/// The stored admin can authorize `register` with an explicit mocked auth entry.
+#[test]
+fn test_admin_can_register_with_explicit_auth() {
+    let (env, facade, admin) = setup_without_auth_mocks();
+    let contract = Address::generate(&env);
+    let facade_id = facade.address.clone();
+
+    facade.init(&admin);
+
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &facade_id,
+            fn_name: "register",
+            args: (contract.clone(), ContractKind::BountyEscrow, 1u32).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    facade.register(&contract, &ContractKind::BountyEscrow, &1);
+
+    assert_eq!(
+        facade.get_contract(&contract).unwrap().kind,
+        ContractKind::BountyEscrow
+    );
+}
+
+/// A non-admin auth entry must not satisfy the admin gate on `register`.
+#[test]
+#[should_panic]
+fn test_non_admin_cannot_register() {
+    let (env, facade, admin) = setup_without_auth_mocks();
+    let outsider = Address::generate(&env);
+    let contract = Address::generate(&env);
+    let facade_id = facade.address.clone();
+
+    facade.init(&admin);
+
+    env.mock_auths(&[MockAuth {
+        address: &outsider,
+        invoke: &MockAuthInvoke {
+            contract: &facade_id,
+            fn_name: "register",
+            args: (contract.clone(), ContractKind::BountyEscrow, 1u32).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    facade.register(&contract, &ContractKind::BountyEscrow, &1);
 }
 
 // ---------------------------------------------------------------------------
@@ -274,4 +346,73 @@ fn test_deregister_before_init_rejected() {
 
     let result = facade.try_deregister(&addr);
     assert_eq!(result, Err(Ok(FacadeError::NotInitialized)));
+}
+
+/// The stored admin can authorize `deregister` with an explicit mocked auth entry.
+#[test]
+fn test_admin_can_deregister_with_explicit_auth() {
+    let (env, facade, admin) = setup_without_auth_mocks();
+    let contract = Address::generate(&env);
+    let facade_id = facade.address.clone();
+
+    facade.init(&admin);
+
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &facade_id,
+            fn_name: "register",
+            args: (contract.clone(), ContractKind::ProgramEscrow, 2u32).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    facade.register(&contract, &ContractKind::ProgramEscrow, &2);
+
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &facade_id,
+            fn_name: "deregister",
+            args: (contract.clone(),).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    facade.deregister(&contract);
+
+    assert_eq!(facade.get_contract(&contract), None);
+}
+
+/// A non-admin auth entry must not satisfy the admin gate on `deregister`.
+#[test]
+#[should_panic]
+fn test_non_admin_cannot_deregister() {
+    let (env, facade, admin) = setup_without_auth_mocks();
+    let outsider = Address::generate(&env);
+    let contract = Address::generate(&env);
+    let facade_id = facade.address.clone();
+
+    facade.init(&admin);
+
+    env.mock_auths(&[MockAuth {
+        address: &admin,
+        invoke: &MockAuthInvoke {
+            contract: &facade_id,
+            fn_name: "register",
+            args: (contract.clone(), ContractKind::GrainlifyCore, 3u32).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+    facade.register(&contract, &ContractKind::GrainlifyCore, &3);
+
+    env.mock_auths(&[MockAuth {
+        address: &outsider,
+        invoke: &MockAuthInvoke {
+            contract: &facade_id,
+            fn_name: "deregister",
+            args: (contract.clone(),).into_val(&env),
+            sub_invokes: &[],
+        },
+    }]);
+
+    facade.deregister(&contract);
 }

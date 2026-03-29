@@ -14,6 +14,7 @@ enum DataKey {
     Proposal(u64),
     ProposalCounter,
     Paused,
+    StateInconsistent,
 }
 
 /// =======================
@@ -191,6 +192,23 @@ impl MultiSig {
         env.storage().instance().remove(&DataKey::Config);
     }
 
+    /// Return whether the contract is currently paused.
+    pub fn is_contract_paused(env: &Env) -> bool {
+        env.storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false)
+    }
+
+    /// Return whether the contract state is inconsistent.
+    pub fn is_state_inconsistent(env: &Env) -> bool {
+        // Check for basic state consistency
+        env.storage()
+            .instance()
+            .get(&DataKey::StateInconsistent)
+            .unwrap_or(false)
+    }
+
     /// Pauses multisig-protected execution paths.
     pub fn pause(env: &Env, signer: Address) {
         signer.require_auth();
@@ -211,26 +229,6 @@ impl MultiSig {
 
         env.storage().instance().set(&DataKey::Paused, &false);
         env.events().publish((symbol_short!("unpause"),), signer);
-    }
-
-    /// Return whether the contract is currently paused.
-    pub fn is_contract_paused(env: &Env) -> bool {
-        env.storage()
-            .instance()
-            .get(&DataKey::Paused)
-            .unwrap_or(false)
-    }
-
-    /// Return whether the multisig configuration is structurally unsafe.
-    pub fn is_state_inconsistent(env: &Env) -> bool {
-        match Self::get_config_opt(env) {
-            Some(config) => {
-                config.threshold == 0
-                    || config.signers.is_empty()
-                    || config.threshold > config.signers.len()
-            }
-            None => true,
-        }
     }
 
     /// =======================

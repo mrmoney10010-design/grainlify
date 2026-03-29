@@ -204,7 +204,7 @@ fn batch_lock_empty_batch_is_rejected() {
     let ctx = TestCtx::new();
     let empty: soroban_sdk::Vec<LockFundsItem> = Vec::new(&ctx.env);
     let result = ctx.client.try_batch_lock_funds(&empty);
-    assert_eq!(result.unwrap_err().unwrap(), Error::InvalidBatchSize);
+    assert_eq!(result.unwrap_err().unwrap(), Error::InvalidAmount);
 }
 
 #[test]
@@ -234,7 +234,7 @@ fn batch_lock_exceeds_max_batch_size_is_rejected() {
         .mint(&ctx.depositor, &(AMOUNT * (MAX_BATCH as i128 + 1)));
     let items = ctx.build_lock_batch(MAX_BATCH + 1);
     let result = ctx.client.try_batch_lock_funds(&items);
-    assert_eq!(result.unwrap_err().unwrap(), Error::InvalidBatchSize);
+    assert_eq!(result.unwrap_err().unwrap(), Error::InvalidAmount);
 }
 
 // ===========================================================================
@@ -249,7 +249,7 @@ fn batch_lock_duplicate_bounty_id_in_batch_is_rejected() {
     items.push_back(ctx.lock_item(2));
     items.push_back(ctx.lock_item(1)); // duplicate
     let result = ctx.client.try_batch_lock_funds(&items);
-    assert_eq!(result.unwrap_err().unwrap(), Error::DuplicateBountyId);
+    assert_eq!(result.unwrap_err().unwrap(), Error::BountyExists);
 }
 
 #[test]
@@ -390,7 +390,7 @@ fn batch_lock_last_item_duplicate_causes_full_rollback() {
     items.push_back(ctx.lock_item(1)); // duplicate of first, placed last
 
     let result = ctx.client.try_batch_lock_funds(&items);
-    assert_eq!(result.unwrap_err().unwrap(), Error::DuplicateBountyId);
+    assert_eq!(result.unwrap_err().unwrap(), Error::BountyExists);
 
     for id in [1u64, 2] {
         ctx.assert_no_escrow(id);
@@ -428,7 +428,7 @@ fn batch_release_empty_batch_is_rejected() {
     let ctx = TestCtx::new();
     let empty: soroban_sdk::Vec<ReleaseFundsItem> = Vec::new(&ctx.env);
     let result = ctx.client.try_batch_release_funds(&empty);
-    assert_eq!(result.unwrap_err().unwrap(), Error::InvalidBatchSize);
+    assert_eq!(result.unwrap_err().unwrap(), Error::InvalidAmount);
 }
 
 #[test]
@@ -460,7 +460,7 @@ fn batch_release_exceeds_max_batch_size_is_rejected() {
     ctx.lock_n(MAX_BATCH as u64 + 1);
     let items = ctx.build_release_batch(MAX_BATCH + 1);
     let result = ctx.client.try_batch_release_funds(&items);
-    assert_eq!(result.unwrap_err().unwrap(), Error::InvalidBatchSize);
+    assert_eq!(result.unwrap_err().unwrap(), Error::InvalidAmount);
 }
 
 // ===========================================================================
@@ -479,7 +479,7 @@ fn batch_release_duplicate_bounty_id_in_batch_is_rejected() {
     items.push_back(ctx.release_item(1)); // duplicate
 
     let result = ctx.client.try_batch_release_funds(&items);
-    assert_eq!(result.unwrap_err().unwrap(), Error::DuplicateBountyId);
+    assert_eq!(result.unwrap_err().unwrap(), Error::BountyExists);
 }
 
 #[test]

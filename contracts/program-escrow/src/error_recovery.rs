@@ -928,9 +928,7 @@ pub fn store_batch_state(
     for i in 0..recipients.len() {
         let recipient = recipients.get(i).unwrap();
         let amount = amounts.get(i).unwrap();
-        total_amount = total_amount.checked_add(amount).unwrap_or_else(|| {
-            panic!("Batch amount overflow");
-        });
+        total_amount = crate::token_math::safe_add(total_amount, amount);
 
         items.push_back(BatchItem {
             index: i as u32,
@@ -1073,12 +1071,7 @@ pub fn mark_item_success(env: &Env, batch_id: u64, item_index: u32) -> Result<()
 
     let mut item = state.items.get(item_index).unwrap();
     item.status = BatchItemStatus::Success;
-    state.successful_amount = state
-        .successful_amount
-        .checked_add(item.amount)
-        .unwrap_or_else(|| {
-            panic!("Successful amount overflow");
-        });
+    state.successful_amount = crate::token_math::safe_add(state.successful_amount, item.amount);
     state.items.set(item_index, item);
 
     update_batch_state(env, &state);
@@ -1124,7 +1117,7 @@ pub fn mark_item_rolled_back(env: &Env, batch_id: u64, item_index: u32) -> Resul
     item.status = BatchItemStatus::RolledBack;
 
     if was_success {
-        state.successful_amount = state.successful_amount.saturating_sub(item.amount);
+        state.successful_amount = crate::token_math::safe_sub(state.successful_amount, item.amount);
     }
 
     state.items.set(item_index, item);
@@ -1270,9 +1263,7 @@ pub fn calculate_rollback_amount(env: &Env, batch_id: u64) -> Result<i128, u32> 
     for i in 0..state.items.len() {
         let item = state.items.get(i).unwrap();
         if item.status == BatchItemStatus::Success {
-            total = total.checked_add(item.amount).unwrap_or_else(|| {
-                panic!("Rollback amount overflow");
-            });
+            total = crate::token_math::safe_add(total, item.amount);
         }
     }
 
@@ -1320,9 +1311,7 @@ pub fn prepare_rollback(env: &Env, batch_id: u64, caller: &Address) -> Result<Ro
     for i in 0..state.items.len() {
         let item = state.items.get(i).unwrap();
         if item.status == BatchItemStatus::Success {
-            total_amount = total_amount.checked_add(item.amount).unwrap_or_else(|| {
-                panic!("Rollback amount overflow");
-            });
+            total_amount = crate::token_math::safe_add(total_amount, item.amount);
             count += 1;
             affected.push_back(item.recipient.clone());
         }
@@ -1364,27 +1353,13 @@ pub fn verify_batch_integrity(env: &Env, batch_id: u64) -> bool {
         let item = state.items.get(i).unwrap();
         match item.status {
             BatchItemStatus::Success => {
-                calculated_successful = calculated_successful
-                    .checked_add(item.amount)
-                    .unwrap_or_else(|| {
-                        panic!("Amount overflow in integrity check");
-                    });
+                calculated_successful = crate::token_math::safe_add(calculated_successful, item.amount);
             }
             BatchItemStatus::Pending => {
-                calculated_pending =
-                    calculated_pending
-                        .checked_add(item.amount)
-                        .unwrap_or_else(|| {
-                            panic!("Amount overflow in integrity check");
-                        });
+                calculated_pending = crate::token_math::safe_add(calculated_pending, item.amount);
             }
             BatchItemStatus::Failed | BatchItemStatus::RolledBack => {
-                calculated_failed =
-                    calculated_failed
-                        .checked_add(item.amount)
-                        .unwrap_or_else(|| {
-                            panic!("Amount overflow in integrity check");
-                        });
+                calculated_failed = crate::token_math::safe_add(calculated_failed, item.amount);
             }
         }
     }

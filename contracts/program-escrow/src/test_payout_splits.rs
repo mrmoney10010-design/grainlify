@@ -13,7 +13,7 @@ extern crate std;
 
 use soroban_sdk::{
     testutils::{Address as _, Ledger},
-    token, vec, Address, Env, String,
+    token, vec, Address, Env, String, Vec,
 };
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
         set_split_config, BeneficiarySplit, SplitConfig, SplitConfigSetEvent, SplitPayoutEvent,
         SplitPayoutResult, TOTAL_BASIS_POINTS,
     },
-    DataKey, ProgramData, PROGRAM_DATA,
+    DataKey, ProgramData, ProgramMetadata, PROGRAM_DATA,
 };
 
 // ===========================================================================

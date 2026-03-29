@@ -26,21 +26,29 @@ pub enum AuditDataKey {
 }
 
 pub fn set_enabled(env: &Env, enabled: bool) {
-    let mut config = env.storage().instance().get(&AuditDataKey::Config).unwrap_or(AuditConfig {
-        enabled: false,
-        sequence: 0,
-        head_hash: BytesN::from_array(env, &[0; 32]),
-    });
+    let mut config = env
+        .storage()
+        .instance()
+        .get(&AuditDataKey::Config)
+        .unwrap_or(AuditConfig {
+            enabled: false,
+            sequence: 0,
+            head_hash: BytesN::from_array(env, &[0; 32]),
+        });
     config.enabled = enabled;
     env.storage().instance().set(&AuditDataKey::Config, &config);
 }
 
 pub fn log_action(env: &Env, action: Symbol, actor: Address, target_id: u64) {
-    let mut config: AuditConfig = env.storage().instance().get(&AuditDataKey::Config).unwrap_or(AuditConfig {
-        enabled: false,
-        sequence: 0,
-        head_hash: BytesN::from_array(env, &[0; 32]),
-    });
+    let mut config: AuditConfig = env
+        .storage()
+        .instance()
+        .get(&AuditDataKey::Config)
+        .unwrap_or(AuditConfig {
+            enabled: false,
+            sequence: 0,
+            head_hash: BytesN::from_array(env, &[0; 32]),
+        });
 
     if !config.enabled {
         return;
@@ -64,25 +72,31 @@ pub fn log_action(env: &Env, action: Symbol, actor: Address, target_id: u64) {
         target_id,
         timestamp,
     );
-    let new_hash = env.crypto().sha256(&payload.to_xdr(env));
+    let new_hash: BytesN<32> = env.crypto().sha256(&payload.to_xdr(env)).into();
 
     config.head_hash = new_hash;
-    
-    env.storage().persistent().set(&AuditDataKey::Record(config.sequence), &record);
+
+    env.storage()
+        .persistent()
+        .set(&AuditDataKey::Record(config.sequence), &record);
     config.sequence += 1;
     env.storage().instance().set(&AuditDataKey::Config, &config);
 }
 
 pub fn get_audit_tail(env: &Env, n: u32) -> Vec<AuditRecord> {
-    let config: AuditConfig = env.storage().instance().get(&AuditDataKey::Config).unwrap_or(AuditConfig {
-        enabled: false,
-        sequence: 0,
-        head_hash: BytesN::from_array(env, &[0; 32]),
-    });
+    let config: AuditConfig = env
+        .storage()
+        .instance()
+        .get(&AuditDataKey::Config)
+        .unwrap_or(AuditConfig {
+            enabled: false,
+            sequence: 0,
+            head_hash: BytesN::from_array(env, &[0; 32]),
+        });
 
     let mut tail = Vec::new(env);
     let start = config.sequence.saturating_sub(n as u64);
-    
+
     for i in start..config.sequence {
         if let Some(record) = env.storage().persistent().get(&AuditDataKey::Record(i)) {
             tail.push_back(record);

@@ -130,7 +130,7 @@ fn test_issue_and_use_release_capability() {
     );
     assert_eq!(
         too_large.unwrap_err().unwrap(),
-        Error::CapabilityAmountExceeded
+        Error::CapAmountExceeded
     );
 }
 
@@ -237,7 +237,7 @@ fn test_capability_cannot_exceed_owner_authority() {
     );
     assert_eq!(
         over_limit_issue.unwrap_err().unwrap(),
-        Error::CapabilityExceedsAuthority
+        Error::CapExceedsAuthority
     );
 
     setup.client.set_claim_window(&300);

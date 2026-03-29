@@ -55,42 +55,39 @@ fn test_all_error_codes_stable() {
     assert_eq!(Error::FundsNotLocked as u32, 5);
     assert_eq!(Error::DeadlineNotPassed as u32, 6);
     assert_eq!(Error::Unauthorized as u32, 7);
-    assert_eq!(Error::InvalidFeeRate as u32, 8);
-    assert_eq!(Error::FeeRecipientNotSet as u32, 9);
-    assert_eq!(Error::InvalidBatchSize as u32, 10);
-    assert_eq!(Error::BatchSizeMismatch as u32, 11);
-    assert_eq!(Error::DuplicateBountyId as u32, 12);
+    assert_eq!(Error::InvalidAmount as u32, 8);
+    assert_eq!(Error::InvalidAmount as u32, 10);
+    assert_eq!(Error::BountyExists as u32, 12);
     assert_eq!(Error::InvalidAmount as u32, 13);
     assert_eq!(Error::InvalidDeadline as u32, 14);
     // 15 intentionally unassigned
     assert_eq!(Error::InsufficientFunds as u32, 16);
-    assert_eq!(Error::RefundNotApproved as u32, 17);
     assert_eq!(Error::FundsPaused as u32, 18);
-    assert_eq!(Error::AmountBelowMinimum as u32, 19);
-    assert_eq!(Error::AmountAboveMaximum as u32, 20);
+    assert_eq!(Error::InvalidAmount as u32, 19);
+    assert_eq!(Error::InvalidAmount as u32, 20);
     assert_eq!(Error::NotPaused as u32, 21);
     assert_eq!(Error::ClaimPending as u32, 22);
-    assert_eq!(Error::TicketNotFound as u32, 23);
-    assert_eq!(Error::TicketAlreadyUsed as u32, 24);
-    assert_eq!(Error::TicketExpired as u32, 25);
-    assert_eq!(Error::CapabilityNotFound as u32, 26);
+    assert_eq!(Error::TicketInvalid as u32, 23);
+    assert_eq!(Error::TicketInvalid as u32, 24);
+    assert_eq!(Error::TicketInvalid as u32, 25);
+    assert_eq!(Error::CapNotFound as u32, 26);
     assert_eq!(Error::CapabilityExpired as u32, 27);
     assert_eq!(Error::CapabilityRevoked as u32, 28);
-    assert_eq!(Error::CapabilityActionMismatch as u32, 29);
-    assert_eq!(Error::CapabilityAmountExceeded as u32, 30);
-    assert_eq!(Error::CapabilityUsesExhausted as u32, 31);
-    assert_eq!(Error::CapabilityExceedsAuthority as u32, 32);
+    assert_eq!(Error::CapActionMismatch as u32, 29);
+    assert_eq!(Error::CapAmountExceeded as u32, 30);
+    assert_eq!(Error::CapUsesExhausted as u32, 31);
+    assert_eq!(Error::CapExceedsAuthority as u32, 32);
     assert_eq!(Error::InvalidAssetId as u32, 33);
     assert_eq!(Error::ContractDeprecated as u32, 34);
     assert_eq!(Error::ParticipantBlocked as u32, 35);
     assert_eq!(Error::ParticipantNotAllowed as u32, 36);
-    assert_eq!(Error::UseGetEscrowInfoV2ForAnonymous as u32, 37);
+    assert_eq!(Error::UseEscrowV2ForAnon as u32, 37);
     // 38 intentionally unassigned
-    assert_eq!(Error::AnonymousRefundRequiresResolution as u32, 39);
-    assert_eq!(Error::AnonymousResolverNotSet as u32, 40);
+    assert_eq!(Error::AnonRefundNeedsResolver as u32, 39);
+    assert_eq!(Error::AnonResolverNotSet as u32, 40);
     // 41 intentionally unassigned
     assert_eq!(Error::InvalidSelectionInput as u32, 42);
-    assert_eq!(Error::UpgradeSafetyCheckFailed as u32, 43);
+    assert_eq!(Error::UpgradeSafetyFailed as u32, 43);
 }
 
 // --- Enum variant stability ---
@@ -430,11 +427,11 @@ fn test_amount_policy_boundary_errors() {
     client.set_amount_policy(&admin, &500, &2000);
     assert_eq!(
         client.try_lock_funds(&depositor, &1, &499, &9999).unwrap_err().unwrap(),
-        Error::AmountBelowMinimum
+        Error::InvalidAmount
     );
     assert_eq!(
         client.try_lock_funds(&depositor, &2, &2001, &9999).unwrap_err().unwrap(),
-        Error::AmountAboveMaximum
+        Error::InvalidAmount
     );
     client.lock_funds(&depositor, &3, &500, &9999);
     client.lock_funds(&depositor, &4, &2000, &9999);

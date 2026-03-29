@@ -266,6 +266,7 @@ This design allows off-chain systems to:
 - All amounts must be positive
 - Payout history is immutable and auditable
 - Token transfers use the Soroban token contract standard
+- **Token Math Safety**: All token arithmetic (addition, subtraction, multiplication) is centralized in `token_math.rs` and utilizes checked mathematical operations arrayed with explicit panic messages to securely prevent overflow and underflow vulnerabilities.
 - `token_address` must be a contract address (not an account address)
 - Shared asset id rules are documented in `contracts/ASSET_ID_STRATEGY.md`
 

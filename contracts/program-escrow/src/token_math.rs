@@ -67,3 +67,25 @@ pub fn to_base_units(amount: i128, decimals: u32) -> Option<i128> {
     let factor = 10_i128.checked_pow(decimals)?;
     amount.checked_mul(factor)
 }
+
+/// Safely adds two i128 token amounts.
+///
+/// Panics with an explicit error message on overflow to prevent silent
+/// arithmetic failures and assist developers during testing.
+pub fn safe_add(a: i128, b: i128) -> i128 {
+    a.checked_add(b).expect("Token math overflow: addition")
+}
+
+/// Safely subtracts `b` from `a` (a - b).
+///
+/// Panics with an explicit error message on underflow.
+pub fn safe_sub(a: i128, b: i128) -> i128 {
+    a.checked_sub(b).expect("Token math underflow: subtraction")
+}
+
+/// Safely multiplies two i128 token amounts.
+///
+/// Panics with an explicit error message on overflow.
+pub fn safe_mul(a: i128, b: i128) -> i128 {
+    a.checked_mul(b).expect("Token math overflow: multiplication")
+}

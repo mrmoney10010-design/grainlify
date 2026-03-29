@@ -245,3 +245,41 @@ fn fee_monotonic_with_amount() {
         prev = fee;
     }
 }
+
+// ===========================================================================
+// 7. safe_add, safe_sub, safe_mul
+// ===========================================================================
+
+#[test]
+fn safe_add_valid() {
+    assert_eq!(token_math::safe_add(100, 200), 300);
+}
+
+#[test]
+#[should_panic(expected = "Token math overflow: addition")]
+fn safe_add_overflow() {
+    let _ = token_math::safe_add(i128::MAX, 1);
+}
+
+#[test]
+fn safe_sub_valid() {
+    assert_eq!(token_math::safe_sub(500, 200), 300);
+    assert_eq!(token_math::safe_sub(100, 100), 0);
+}
+
+#[test]
+#[should_panic(expected = "Token math underflow: subtraction")]
+fn safe_sub_underflow() {
+    let _ = token_math::safe_sub(i128::MIN, 1);
+}
+
+#[test]
+fn safe_mul_valid() {
+    assert_eq!(token_math::safe_mul(100, 200), 20000);
+}
+
+#[test]
+#[should_panic(expected = "Token math overflow: multiplication")]
+fn safe_mul_overflow() {
+    let _ = token_math::safe_mul(i128::MAX, 2);
+}

@@ -584,7 +584,9 @@ checksum = "2bfcf67fea2815c2fc3b90873fae90957be12ff417335dfadc7f52927feb03b2"
 name = "escrow"
 version = "0.0.0"
 dependencies = [
+ "ed25519-dalek",
  "grainlify-core",
+ "rand",
  "soroban-sdk 23.4.1",
 ]
 

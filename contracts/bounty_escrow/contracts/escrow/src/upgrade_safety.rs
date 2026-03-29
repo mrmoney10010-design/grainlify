@@ -552,7 +552,7 @@ fn check_balance_sanity(env: &Env) -> (bool, Vec<UpgradeWarning>) {
 /// Validates upgrade prerequisites before executing upgrade.
 ///
 /// # Errors
-/// Returns `Error::UpgradeSafetyCheckFailed` when blocking safety findings
+/// Returns `Error::UpgradeSafetyFailed` when blocking safety findings
 /// are detected and checks are enabled.
 pub fn validate_upgrade(env: &Env) -> Result<(), Error> {
     // Check if safety checks are enabled
@@ -569,7 +569,7 @@ pub fn validate_upgrade(env: &Env) -> Result<(), Error> {
         if !report.errors.is_empty() {
             // For simplicity, we return a generic error
             // In production, you might want more specific error codes
-            return Err(Error::UpgradeSafetyCheckFailed);
+            return Err(Error::UpgradeSafetyFailed);
         }
     }
 

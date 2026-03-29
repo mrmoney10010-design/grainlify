@@ -26,7 +26,15 @@ fn setup_program(
     let token_admin_client = token::StellarAssetClient::new(env, &token_id);
 
     let program_id = String::from_str(env, "hack-2026");
-    client.init_program(&program_id, &admin, &token_id, &admin, &None, &None);
+    client.init_program(
+        &program_id,
+        &admin,
+        &token_id,
+        &admin,
+        &None,
+        &None,
+    );
+    client.publish_program();
 
     if initial_amount > 0 {
         token_admin_client.mint(&client.address, &initial_amount);
@@ -396,6 +404,7 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
         &None,
         &None,
     );
+    client_a.publish_program();
     assert_eq!(prog_a.total_funds, 0);
     assert_eq!(prog_a.remaining_balance, 0);
 
@@ -412,6 +421,7 @@ fn test_full_lifecycle_multi_program_batch_payouts() {
         &None,
         &None,
     );
+    client_b.publish_program();
     assert_eq!(prog_b.total_funds, 0);
 
     // ── Phase 1: Lock funds in multiple steps ───────────────────────────
@@ -589,6 +599,7 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
         &None,
         &None,
     );
+    client_a.publish_program();
     client_b.init_program(
         &String::from_str(&env, "multi-token-b"),
         &payout_key_b,
@@ -597,6 +608,7 @@ fn test_multi_token_balance_accounting_isolated_across_program_instances() {
         &None,
         &None,
     );
+    client_b.publish_program();
 
     token_admin_client_a.mint(&client_a.address, &500_000);
     token_admin_client_b.mint(&client_b.address, &300_000);
@@ -1298,6 +1310,7 @@ fn test_multi_tenant_no_cross_program_balance_or_analytics() {
         &None,
         &None,
     );
+    client_a.publish_program();
     client_b.init_program(
         &String::from_str(&env, "prog-isolation-b"),
         &admin_b,
@@ -1306,6 +1319,7 @@ fn test_multi_tenant_no_cross_program_balance_or_analytics() {
         &None,
         &None,
     );
+    client_b.publish_program();
 
     token_sac.mint(&client_a.address, &500_000);
     token_sac.mint(&client_b.address, &300_000);
@@ -2239,6 +2253,88 @@ fn test_release_schedules_persist_after_simulated_upgrade() {
     assert_eq!(stats_final.released_count, 2);
     assert_eq!(stats_final.scheduled_count, 0);
     assert_eq!(stats_final.remaining_balance, 100_000);
+}
+
+#[test]
+fn test_release_schedules_timestamps_and_manual_release_after_simulated_upgrade() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 300_000);
+
+    let now = env.ledger().timestamp();
+    let r1 = Address::generate(&env);
+    let r2 = Address::generate(&env);
+
+    let s1 = client.create_program_release_schedule(&r1, &100_000, &(now + 100));
+    let s2 = client.create_program_release_schedule(&r2, &150_000, &(now + 200));
+
+    let schedules_before = client.get_all_prog_release_schedules();
+    assert_eq!(schedules_before.len(), 2);
+    assert_eq!(schedules_before.get(0).unwrap().release_timestamp, now + 100);
+    assert_eq!(schedules_before.get(1).unwrap().release_timestamp, now + 200);
+    assert!(!schedules_before.get(0).unwrap().released);
+    assert!(!schedules_before.get(1).unwrap().released);
+
+    // Simulated upgrade (no re-init, state is preserved)
+    env.ledger().set_timestamp(now + 150);
+    let released_count = client.trigger_program_releases();
+    assert_eq!(released_count, 1);
+
+    let schedules_mid = client.get_all_prog_release_schedules();
+    assert_eq!(schedules_mid.len(), 2);
+    let mid_s1 = schedules_mid.iter().find(|s| s.schedule_id == s1.schedule_id).unwrap();
+    let mid_s2 = schedules_mid.iter().find(|s| s.schedule_id == s2.schedule_id).unwrap();
+    assert!(mid_s1.released);
+    assert_eq!(mid_s1.release_timestamp, now + 100);
+    assert!(!mid_s2.released);
+    assert_eq!(mid_s2.release_timestamp, now + 200);
+
+    // Manual release should succeed after upgrade even if schedule timestamp is in future.
+    client.release_program_schedule_manual(&s2.schedule_id);
+
+    let stats_after_manual = client.get_program_aggregate_stats();
+    assert_eq!(stats_after_manual.released_count, 2);
+    assert_eq!(stats_after_manual.scheduled_count, 0);
+    assert_eq!(stats_after_manual.remaining_balance, 50_000);
+
+    let schedules_final = client.get_all_prog_release_schedules();
+    let final_s2 = schedules_final.iter().find(|s| s.schedule_id == s2.schedule_id).unwrap();
+    assert!(final_s2.released);
+    assert_eq!(final_s2.release_timestamp, now + 200);
+}
+
+#[test]
+fn test_release_schedules_work_after_v2_program_state_migration() {
+    let env = Env::default();
+    let (client, _admin, _token, _token_admin) = setup_program(&env, 400_000);
+
+    let program_id = String::from_str(&env, "hack-2026");
+    let now = env.ledger().timestamp();
+    let recipient = Address::generate(&env);
+
+    client.create_program_release_schedule(&recipient, &100_000, &(now + 100));
+
+    let prog_v2_before = client.get_program_info();
+    assert_eq!(prog_v2_before.remaining_balance, 400_000);
+
+    env.ledger().set_timestamp(now + 200);
+    let released = client.trigger_program_releases();
+    assert_eq!(released, 1);
+
+    let schedule = client
+        .get_all_prog_release_schedules()
+        .iter()
+        .find(|s| s.schedule_id == 1)
+        .unwrap();
+    assert!(schedule.released);
+    assert_eq!(schedule.release_timestamp, now + 100);
+
+    let history = client.get_program_release_history();
+    assert_eq!(history.len(), 1);
+    assert_eq!(history.get(0).unwrap().schedule_id, 1);
+
+    let prog_v2_after = client.get_program_info();
+    assert_eq!(prog_v2_after.remaining_balance, 300_000);
+    assert_eq!(prog_v2_after.payout_history.len(), 1);
 }
 
 #[test]

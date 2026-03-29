@@ -83,6 +83,9 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
+                  "bytes": "4bec5c9dcb95eb9a41242cb9d0b860bce19543db650d8239301d163d7cafaca2"
+                },
+                {
                   "bool": true
                 }
               ]
@@ -105,6 +108,9 @@
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
                 },
                 {
+                  "bytes": "6e8b1969cf60ce76bef5ec38266d681e22269d1ce694b260e0635779c5349e38"
+                },
+                {
                   "bool": false
                 }
               ]
@@ -125,6 +131,9 @@
               "args": [
                 {
                   "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAK3IM"
+                },
+                {
+                  "bytes": "6e8b1969cf60ce76bef5ec38266d681e22269d1ce694b260e0635779c5349e38"
                 },
                 {
                   "bool": true
@@ -244,7 +253,7 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "bool": true
+                  "bytes": "6e8b1969cf60ce76bef5ec38266d681e22269d1ce694b260e0635779c5349e38"
                 }
               }
             },

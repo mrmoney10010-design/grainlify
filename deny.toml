@@ -1,0 +1,9 @@
+[advisories]
+# Ignored advisories for unmaintained dependencies that are transitive
+# and difficult to update immediately.
+ignore = [
+    # instant is unmaintained, used via transitive dependency
+    { id = "RUSTSEC-2024-0384", reason = "Transitive dependency via soroban-sdk, waiting for upstream update" },
+    # yaml-rust is unmaintained, used via transitive dependency  
+    { id = "RUSTSEC-2024-0320", reason = "Transitive dependency via grainlify-core, waiting for upstream update" },
+]

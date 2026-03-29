@@ -29,8 +29,8 @@
 //!   (Checks-Effects-Interactions ordering) so they accurately reflect final
 //!   on-chain state.
 //! * No PII, KYC data, or private keys are ever emitted.
-//! * All `symbol_short!` strings are ≤ 8 bytes — Soroban silently truncates
-//!   longer strings, which would corrupt topic-based filtering.
+//! * All `symbol_short!` strings are ≤ 9 bytes — Soroban rejects longer values,
+//!   which would corrupt topic-based filtering.
 use crate::CapabilityAction;
 use soroban_sdk::{contracttype, symbol_short, Address, BytesN, Env, Symbol};
 
@@ -163,6 +163,51 @@ pub struct FundsReleased {
 /// Emit [`FundsReleased`].
 pub fn emit_funds_released(env: &Env, event: FundsReleased) {
     let topics = (symbol_short!("f_rel"), event.bounty_id);
+    env.events().publish(topics, event.clone());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ESCROW PUBLISHED EVENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/// Payload for the [`emit_escrow_published`] event.
+///
+/// Emitted when an escrow transitions from `Draft` to `Locked` status via
+/// the `publish()` function. This indicates the escrow is now active and
+/// funds can be released or refunded.
+///
+/// ### Topics
+/// | Index | Value |
+/// |-------|-------|
+/// | 0 | `"pub"` |
+/// | 1 | `bounty_id` |
+///
+/// ### Data fields
+/// | Field | Type | Description |
+/// |-------|------|-------------|
+/// | `version` | `u32` | Always [`EVENT_VERSION_V2`] |
+/// | `bounty_id` | `u64` | The bounty identifier |
+/// | `published_by` | `Address` | Address that published the escrow |
+/// | `timestamp` | `u64` | Ledger time of publication |
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct EscrowPublished {
+    pub version: u32,
+    pub bounty_id: u64,
+    pub published_by: Address,
+    pub timestamp: u64,
+}
+
+/// Emit [`EscrowPublished`].
+///
+/// # Arguments
+/// * `env`   — Soroban execution environment.
+/// * `event` — Pre-constructed event payload.
+///
+/// # Panics
+/// Never panics; publishing is infallible in Soroban.
+pub fn emit_escrow_published(env: &Env, event: EscrowPublished) {
+    let topics = (symbol_short!("pub"), event.bounty_id);
     env.events().publish(topics, event.clone());
 }
 
@@ -885,7 +930,7 @@ pub fn emit_pause_state_changed(env: &Env, event: crate::PauseStateChanged) {
 /// | 0 | `"em_wtd"` |
 ///
 /// ### Security notes
-/// - This function can only be called when `lock_paused = true`,
+/// Returns `Error::UpgradeSafetyFailed` when blocking safety findings = true`,
 ///   ensuring depositors have visible warning before a drain is possible.
 /// - The `amount` field reflects the **entire** contract balance at the
 ///   time of withdrawal, which may cover multiple open escrows.
@@ -1102,7 +1147,7 @@ pub struct TimelockConfigured {
 
 /// Emit [`TimelockConfigured`].
 pub fn emit_timelock_configured(env: &Env, event: TimelockConfigured) {
-    let topics = (symbol_short!("timelock_cfg"),);
+    let topics = (symbol_short!("tmlk_cfg"),);
     env.events().publish(topics, event);
 }
 
@@ -1113,7 +1158,7 @@ pub fn emit_timelock_configured(env: &Env, event: TimelockConfigured) {
 /// ### Topics
 /// | Index | Value |
 /// |-------|-------|
-/// | 0 | `"action_proposed"` |
+/// | 0 | `"act_prop"` |
 /// | 1 | `action_id: u64` |
 ///
 /// ### Data fields
@@ -1136,7 +1181,7 @@ pub struct AdminActionProposed {
 
 /// Emit [`AdminActionProposed`].
 pub fn emit_admin_action_proposed(env: &Env, event: AdminActionProposed) {
-    let topics = (symbol_short!("action_proposed"),);
+    let topics = (symbol_short!("act_prop"),);
     env.events().publish(topics, event);
 }
 
@@ -1147,7 +1192,7 @@ pub fn emit_admin_action_proposed(env: &Env, event: AdminActionProposed) {
 /// ### Topics
 /// | Index | Value |
 /// |-------|-------|
-/// | 0 | `"action_executed"` |
+/// | 0 | `"act_exec"` |
 /// | 1 | `action_id: u64` |
 ///
 /// ### Data fields
@@ -1168,7 +1213,7 @@ pub struct AdminActionExecuted {
 
 /// Emit [`AdminActionExecuted`].
 pub fn emit_admin_action_executed(env: &Env, event: AdminActionExecuted) {
-    let topics = (symbol_short!("action_executed"),);
+    let topics = (symbol_short!("act_exec"),);
     env.events().publish(topics, event);
 }
 
@@ -1179,7 +1224,7 @@ pub fn emit_admin_action_executed(env: &Env, event: AdminActionExecuted) {
 /// ### Topics
 /// | Index | Value |
 /// |-------|-------|
-/// | 0 | `"action_cancelled"` |
+/// | 0 | `"act_cncl"` |
 /// | 1 | `action_id: u64` |
 ///
 /// ### Data fields
@@ -1200,6 +1245,6 @@ pub struct AdminActionCancelled {
 
 /// Emit [`AdminActionCancelled`].
 pub fn emit_admin_action_cancelled(env: &Env, event: AdminActionCancelled) {
-    let topics = (symbol_short!("action_cancelled"),);
+    let topics = (symbol_short!("act_cncl"),);
     env.events().publish(topics, event);
 }

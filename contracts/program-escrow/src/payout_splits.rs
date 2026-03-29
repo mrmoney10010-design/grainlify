@@ -173,9 +173,7 @@ pub fn set_split_config(
         if entry.share_bps <= 0 {
             panic!("SplitConfig: share_bps must be positive");
         }
-        total = total
-            .checked_add(entry.share_bps)
-            .unwrap_or_else(|| panic!("SplitConfig: share overflow"));
+        total = crate::token_math::safe_add(total, entry.share_bps);
     }
     if total != TOTAL_BASIS_POINTS {
         panic!("SplitConfig: shares must sum to 10000 basis points");
@@ -295,22 +293,19 @@ pub fn execute_split_payout(
 
     for i in 0..n {
         let entry = config.beneficiaries.get(i).unwrap();
-        let share_amount = total_amount
-            .checked_mul(entry.share_bps)
-            .and_then(|x| x.checked_div(TOTAL_BASIS_POINTS))
-            .unwrap_or_else(|| panic!("SplitPayout: arithmetic overflow"));
+        let product = crate::token_math::safe_mul(total_amount, entry.share_bps);
+        let share_amount = product.checked_div(TOTAL_BASIS_POINTS)
+            .unwrap_or_else(|| panic!("SplitPayout: division error"));
         amounts.push_back(share_amount);
-        distributed = distributed
-            .checked_add(share_amount)
-            .unwrap_or_else(|| panic!("SplitPayout: sum overflow"));
+        distributed = crate::token_math::safe_add(distributed, share_amount);
     }
 
     // Dust goes to index 0.
-    let dust = total_amount - distributed;
+    let dust = crate::token_math::safe_sub(total_amount, distributed);
     if dust < 0 {
         panic!("SplitPayout: internal accounting error");
     }
-    let first_amount = amounts.get(0).unwrap() + dust;
+    let first_amount = crate::token_math::safe_add(amounts.get(0).unwrap(), dust);
     amounts.set(0, first_amount);
 
     // Transfer and record payouts.
@@ -333,7 +328,7 @@ pub fn execute_split_payout(
         });
     }
 
-    program.remaining_balance -= total_amount;
+    program.remaining_balance = crate::token_math::safe_sub(program.remaining_balance, total_amount);
     save_program(env, &program);
 
     env.events().publish(
@@ -379,21 +374,19 @@ pub fn preview_split(env: &Env, program_id: &String, total_amount: i128) -> Vec<
 
     for i in 0..n {
         let entry = config.beneficiaries.get(i).unwrap();
-        let share_amount = total_amount
-            .checked_mul(entry.share_bps)
-            .and_then(|x| x.checked_div(TOTAL_BASIS_POINTS))
-            .unwrap_or(0);
+        let product = crate::token_math::safe_mul(total_amount, entry.share_bps);
+        let share_amount = product.checked_div(TOTAL_BASIS_POINTS).unwrap_or(0);
         computed.push_back(share_amount);
-        distributed += share_amount;
+        distributed = crate::token_math::safe_add(distributed, share_amount);
     }
 
-    let dust = total_amount - distributed;
+    let dust = crate::token_math::safe_sub(total_amount, distributed);
 
     for i in 0..n {
         let entry = config.beneficiaries.get(i).unwrap();
         let mut amount = computed.get(i).unwrap();
         if i == 0 {
-            amount += dust;
+            amount = crate::token_math::safe_add(amount, dust);
         }
         preview.push_back(BeneficiarySplit {
             recipient: entry.recipient,

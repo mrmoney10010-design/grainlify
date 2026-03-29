@@ -14,3 +14,5 @@ grainlify-core = { path = "../../../contracts/grainlify-core", default-features 
 
 [dev-dependencies]
 soroban-sdk = { workspace = true, features = ["testutils"] }
+ed25519-dalek = { version = "2", default-features = false, features = ["rand_core"] }
+rand = "0.8"

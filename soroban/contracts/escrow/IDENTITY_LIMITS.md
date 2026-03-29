@@ -80,12 +80,19 @@ pub struct IdentityClaim {
 
 ### Admin Functions
 
-#### `set_authorized_issuer(issuer: Address, authorized: bool)`
+#### `set_authorized_issuer(issuer: Address, issuer_pubkey: BytesN<32>, authorized: bool)`
 Authorize or revoke a claim issuer. Only callable by contract admin.
+
+The issuer's Ed25519 public key is **bound** to the issuer Address at authorization
+time.  This is a critical anti-spoofing measure: a claim that references an
+authorized issuer must be signed by the *same* key the admin registered.
+Storing the key alongside the authorization closes the attack vector where
+an attacker references an authorized issuer address but signs with their own key.
 
 **Parameters:**
 - `issuer`: Address of the claim issuer
-- `authorized`: true to authorize, false to revoke
+- `issuer_pubkey`: Ed25519 public key (32 bytes) – stored on-chain
+- `authorized`: true to authorize, false to revoke (removes the stored key)
 
 **Events:**
 - Emits issuer management event with action (add/remove)
@@ -108,29 +115,38 @@ Configure risk-based limit adjustments. Only callable by contract admin.
 
 ### User Functions
 
-#### `submit_identity_claim(claim: IdentityClaim, signature: BytesN<64>, issuer_pubkey: BytesN<32>)`
+#### `submit_identity_claim(claim: IdentityClaim, signature: BytesN<64>)`
 Submit an identity claim for verification and storage.
+
+The issuer's Ed25519 public key is **looked up from on-chain storage** (set by the
+admin via `set_authorized_issuer`).  The caller does *not* provide the key, which
+prevents the spoofing vector where a claim references an authorized issuer but is
+signed with an attacker-controlled key.
 
 **Parameters:**
 - `claim`: The identity claim structure
 - `signature`: Ed25519 signature from authorized issuer
-- `issuer_pubkey`: Public key of the issuer (32 bytes)
 
 **Validation:**
-- Claim must be signed by authorized issuer
 - Claim must not be expired
 - Risk score must be 0-100
-- Signature must be valid
+- Tier must be a valid variant (0-3)
+- Issuer must have an on-chain authorization entry
+- Signature must be valid against the stored issuer public key
 
 **Events:**
 - Success: Emits claim event with tier, risk score, and expiry
 - Failure: Emits rejection event with reason
 
 **Errors:**
-- `InvalidSignature`: Signature verification failed
 - `ClaimExpired`: Claim expiry timestamp has passed
-- `UnauthorizedIssuer`: Issuer is not authorized
+- `UnauthorizedIssuer`: Issuer is not authorized (no stored key)
 - `InvalidRiskScore`: Risk score exceeds 100
+- `InvalidTier`: Tier discriminant is unknown (> 3)
+
+> **Note on `InvalidSignature`**: `ed25519_verify` panics on invalid signatures.
+> The Soroban host converts the panic into a failed transaction, so callers
+> observe an error either way — it just isn't the contract-defined error code.
 
 #### `get_address_identity(address: Address) -> AddressIdentity`
 Query the current identity data for an address.
@@ -228,7 +244,11 @@ Both on-chain (Rust) and off-chain (Go) implementations use the same serializati
 2. **Replay Attacks**: Mitigated by claim expiry timestamps
 3. **Claim Tampering**: Any modification invalidates the signature
 4. **Unauthorized Issuers**: Only authorized issuers can sign valid claims
-5. **Limit Bypass**: Limits enforced on all fund operations
+5. **Identity Spoofing**: Mitigated by binding the issuer's Ed25519 public key
+   to the issuer Address at authorization time.  An attacker cannot reference
+   an authorized issuer but sign with a different key — the on-chain lookup
+   will always use the admin-registered key for verification.
+6. **Limit Bypass**: Limits enforced on all fund operations
 
 ### Privacy
 
@@ -242,11 +262,11 @@ Both on-chain (Rust) and off-chain (Go) implementations use the same serializati
 ### Setting Up Issuers
 
 ```rust
-// Authorize a KYC provider
-client.set_authorized_issuer(&issuer_address, &true);
+// Authorize a KYC provider (pubkey bound at authorization time)
+client.set_authorized_issuer(&issuer_address, &issuer_ed25519_pubkey, &true);
 
-// Revoke an issuer
-client.set_authorized_issuer(&old_issuer_address, &false);
+// Revoke an issuer (removes stored pubkey)
+client.set_authorized_issuer(&old_issuer_address, &BytesN::from_array(&env, &[0; 32]), &false);
 ```
 
 ### Configuring Limits
@@ -279,24 +299,32 @@ claim := &identity.IdentityClaim{
     Issuer:    issuer_address,
 }
 
-// Sign claim
+// Sign claim with the issuer's Ed25519 private key
 signature, _ := identity.SignClaim(claim, issuer_private_key)
 
-// Submit to contract (Rust)
-client.submit_identity_claim(&claim, &signature, &issuer_pubkey);
+// Submit to contract – issuer_pubkey is looked up on-chain
+client.submit_identity_claim(&claim, &signature);
 ```
 
 ## Testing
 
 ### Unit Tests
 
-The contract includes comprehensive unit tests:
-- Issuer authorization management
+The contract includes comprehensive unit tests (25 total):
+- Issuer authorization management with pubkey binding
 - Tier limits configuration
 - Risk thresholds configuration
 - Default identity queries
 - Effective limit calculations
 - Limit enforcement in transactions
+- End-to-end claim submission with real Ed25519 signatures
+- Expired claim rejection
+- Unauthorized issuer rejection (rogue key)
+- Invalid signature rejection (signed with wrong key)
+- Invalid risk score rejection
+- Claim updates (tier upgrade)
+- Tier-aware lock_funds (Premium user can lock more)
+- High-risk score reduces effective limit
 
 ### Running Tests
 
@@ -337,8 +365,9 @@ cargo test --manifest-path contracts/escrow/Cargo.toml
    - Verify ledger timestamp is accurate
 
 3. **Claim Rejected - Unauthorized Issuer**
-   - Verify issuer is authorized via `set_authorized_issuer`
+   - Verify issuer is authorized via `set_authorized_issuer` (with the correct pubkey)
    - Check issuer address matches claim issuer field
+   - Ensure the signature was made with the same private key registered by the admin
 
 4. **Transaction Exceeds Limit**
    - Query effective limit with `get_effective_limit`
