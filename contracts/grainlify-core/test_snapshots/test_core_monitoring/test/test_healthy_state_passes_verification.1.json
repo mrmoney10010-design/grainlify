@@ -354,6 +354,18 @@
                         "key": {
                           "vec": [
                             {
+                              "symbol": "ReadOnlyMode"
+                            }
+                          ]
+                        },
+                        "val": {
+                          "bool": false
+                        }
+                      },
+                      {
+                        "key": {
+                          "vec": [
+                            {
                               "symbol": "Version"
                             }
                           ]
