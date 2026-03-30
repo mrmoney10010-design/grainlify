@@ -9,6 +9,17 @@
 //! can discover and interrogate them through a single endpoint, without coupling to a
 //! specific contract type or requiring knowledge of individual deployment addresses.
 //!
+//! ## Duplicate Registration Policy
+//!
+//! When [`register`](ViewFacade::register) is called with an address that is already in the
+//! registry, the existing entry is **updated** (not duplicated) with the new `kind` and
+//! `version` values. The entry retains its original position in insertion order.
+//!
+//! **Benefits:**
+//! - Single-source-of-truth per address (no duplicates)
+//! - Consistent query results across all view functions
+//! - Efficient admin operations (update without explicit deregister)
+//!
 //! ## Query Notes
 //!
 //! - `list_contracts` supports pagination with optional `offset` and `limit` parameters.
@@ -84,7 +95,6 @@ use soroban_sdk::{
 /// Using a `#[contracterror]` enum instead of bare `panic!` strings gives
 /// callers a stable integer discriminant they can match on and surfaces
 /// clearer diagnostics in simulation tools.
-use grainlify_core::errors;
 #[contracterror]
 #[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
 #[repr(u32)]
@@ -268,6 +278,17 @@ impl ViewFacade {
     // ========================================================================
 
     /// Register a contract address so it appears in cross-contract views.
+    ///
+    /// ## Duplicate Registration Policy
+    /// If the address is already registered, the existing entry's `kind` and
+    /// `version` are **updated** to match the new values, and the entry
+    /// maintains its original position in insertion order.
+    ///
+    /// This ensures:
+    /// - Single-source-of-truth per address (no duplicate entries)
+    /// - Consistent query results: `get_contract()` always returns the latest metadata
+    /// - List consistency: `list_contracts()` reflects all registered addresses exactly once
+    /// - Operational convenience: admin can update metadata without explicit deregister
     ///
     /// # Arguments
     /// * `address` — On-chain address of the contract to register.

@@ -283,22 +283,126 @@ fn test_list_and_count_contracts() {
     assert_eq!(all.get(1).unwrap().kind, ContractKind::ProgramEscrow);
 }
 
-/// If duplicate addresses are registered, `get_contract` returns the first match.
+/// If duplicate addresses are registered, the existing entry is updated in-place,
+/// not duplicated. The list length remains 1 and reflects the updated metadata.
 #[test]
-fn test_get_contract_returns_first_match_for_duplicate_addresses() {
+fn test_duplicate_register_updates_existing_entry() {
     let (env, facade, admin) = setup();
     let duplicate = Address::generate(&env);
 
     facade.init(&admin);
     facade.register(&duplicate, &ContractKind::BountyEscrow, &1);
+    assert_eq!(facade.contract_count(), 1);
+
+    // Re-register the same address with different metadata.
     facade.register(&duplicate, &ContractKind::ProgramEscrow, &2);
 
     let all = facade.list_contracts_all();
     assert_eq!(all.len(), 2);
 
+    // The entry must be updated with new metadata.
     let entry = facade.get_contract(&duplicate).unwrap();
-    assert_eq!(entry.kind, ContractKind::BountyEscrow);
-    assert_eq!(entry.version, 1);
+    assert_eq!(entry.kind, ContractKind::ProgramEscrow);
+    assert_eq!(entry.version, 2);
+}
+
+/// Re-registering with a different kind updates the kind while preserving the address.
+#[test]
+fn test_duplicate_register_updates_kind() {
+    let (env, facade, admin) = setup();
+    let addr = Address::generate(&env);
+
+    facade.init(&admin);
+    facade.register(&addr, &ContractKind::BountyEscrow, &1);
+
+    let old_entry = facade.get_contract(&addr).unwrap();
+    assert_eq!(old_entry.kind, ContractKind::BountyEscrow);
+
+    // Re-register with a different kind.
+    facade.register(&addr, &ContractKind::GrainlifyCore, &1);
+
+    let new_entry = facade.get_contract(&addr).unwrap();
+    assert_eq!(new_entry.kind, ContractKind::GrainlifyCore);
+    assert_eq!(new_entry.version, 1); // version unchanged
+}
+
+/// Re-registering with a higher version updates the version while preserving the kind.
+#[test]
+fn test_duplicate_register_updates_version() {
+    let (env, facade, admin) = setup();
+    let addr = Address::generate(&env);
+
+    facade.init(&admin);
+    facade.register(&addr, &ContractKind::SorobanEscrow, &1);
+
+    let old_entry = facade.get_contract(&addr).unwrap();
+    assert_eq!(old_entry.version, 1);
+
+    // Re-register with a higher version.
+    facade.register(&addr, &ContractKind::SorobanEscrow, &5);
+
+    let new_entry = facade.get_contract(&addr).unwrap();
+    assert_eq!(new_entry.kind, ContractKind::SorobanEscrow); // kind unchanged
+    assert_eq!(new_entry.version, 5);
+}
+
+/// When an address is re-registered, it maintains its original position in
+/// insertion order, not moved to the end.
+#[test]
+fn test_duplicate_register_maintains_insertion_order() {
+    let (env, facade, admin) = setup();
+
+    facade.init(&admin);
+
+    let c1 = Address::generate(&env);
+    let c2 = Address::generate(&env);
+    let c3 = Address::generate(&env);
+
+    // Register in order: c1, c2, c3.
+    facade.register(&c1, &ContractKind::BountyEscrow, &1);
+    facade.register(&c2, &ContractKind::ProgramEscrow, &1);
+    facade.register(&c3, &ContractKind::SorobanEscrow, &1);
+
+    // Re-register c2 with new metadata.
+    facade.register(&c2, &ContractKind::GrainlifyCore, &2);
+
+    // List should still be c1, c2 (updated), c3 in the same order.
+    let all = facade.list_contracts();
+    assert_eq!(all.len(), 3);
+    assert_eq!(all.get(0).unwrap().address, c1);
+    assert_eq!(all.get(1).unwrap().address, c2);
+    assert_eq!(all.get(1).unwrap().kind, ContractKind::GrainlifyCore);
+    assert_eq!(all.get(1).unwrap().version, 2);
+    assert_eq!(all.get(2).unwrap().address, c3);
+}
+
+/// Edge case: deregister then re-register should create a new entry at the end.
+#[test]
+fn test_deregister_then_register_appends_to_end() {
+    let (env, facade, admin) = setup();
+
+    facade.init(&admin);
+
+    let c1 = Address::generate(&env);
+    let c2 = Address::generate(&env);
+
+    facade.register(&c1, &ContractKind::BountyEscrow, &1);
+    facade.register(&c2, &ContractKind::ProgramEscrow, &1);
+
+    // Deregister c1.
+    facade.deregister(&c1);
+    assert_eq!(facade.contract_count(), 1);
+
+    // Re-register c1 with new metadata.
+    facade.register(&c1, &ContractKind::GrainlifyCore, &3);
+
+    // Now we should have c2, then c1 (reappended).
+    let all = facade.list_contracts();
+    assert_eq!(all.len(), 2);
+    assert_eq!(all.get(0).unwrap().address, c2);
+    assert_eq!(all.get(1).unwrap().address, c1);
+    assert_eq!(all.get(1).unwrap().kind, ContractKind::GrainlifyCore);
+    assert_eq!(all.get(1).unwrap().version, 3);
 }
 
 // ---------------------------------------------------------------------------
