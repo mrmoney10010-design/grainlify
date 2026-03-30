@@ -5392,11 +5392,10 @@ impl BountyEscrowContract {
                 amount,
                 refund_to: refund_to.clone(),
                 timestamp: now,
-                trigger_type: RefundTriggerType::AdminApproval,
+                trigger_type: events::RefundTriggerType::Capability,
             },
         );
 
-        // GUARD: release reentrancy lock
         reentrancy_guard::release(&env);
         Ok(())
     }
